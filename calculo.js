@@ -64,6 +64,15 @@
         const r2 = Object.keys(enteros).length ? repartir(quedan, enteros) : {};
         if (!Object.keys(enteros).length) falta = quedan;
         r = { ...r1, ...r2 };
+      } else if (!it.todos && (Number(it.uds) || 1) > 1) {
+        // Varias unidades: cada uno paga las que marca (también medias, tercios…). Las que nadie marca quedan por marcar.
+        const uds = Number(it.uds);
+        const suma = Object.values(pesos).reduce((x, w) => x + w, 0);
+        const resto = uds - suma > 0.001 ? uds - suma : 0;
+        r = repartir(t, { ...pesos, '\u0000resto': resto });
+        falta = r['\u0000resto'] || 0;
+        delete r['\u0000resto'];
+        if (!Object.keys(pesos).length) falta = t;
       } else {
         r = repartir(t, pesos);
         if (r['\u0000faltan']) { falta = r['\u0000faltan']; delete r['\u0000faltan']; }

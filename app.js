@@ -345,17 +345,17 @@ function pintarPlato(it, R) {
     </div>
     <div class="quien">${pintarQuien(it, m, quien, reparto, uds, R.faltaPlato[it.id] || 0)}</div>
     ${!it.todos && uds === 1 && mio ? `<div class="pie"><span class="suave peq">${mio < 1 ? `${porOtro() ? esc(yo) : 'Tú'}: <b>${fraccion(yo, mio)} · ${eur(reparto[yo] || 0)}</b>` : '¿Lo compartiste con alguien?'}</span><button class="btn peq" data-a="repartir">${ico('gente', 15)} ${mio < 1 ? 'Cambiar' : 'Dividir'}</button></div>` : ''}
-    ${!it.todos && uds > 1 ? `<div class="pie"><span class="suave peq">${mio ? `${porOtro() ? esc(yo) : 'Tú'}: <b>${mio} de ${uds}</b>` : `Hay ${uds} · ${eur(cts(it.precio / uds))} c/u`}</span><button class="btn peq" data-a="marcar">${mio ? 'Cambiar' : 'Marcar cuántas'}</button></div>` : ''}
+    ${!it.todos && uds > 1 ? `<div class="pie"><span class="suave peq">${mio ? `${porOtro() ? esc(yo) : 'Tú'}: <b>${unidades(yo, mio)} de ${uds}</b>` : `Hay ${uds} · ${eur(cts(it.precio / uds))} c/u`}</span><button class="btn peq" data-a="marcar">${mio ? 'Cambiar' : 'Marcar cuántas'}</button></div>` : ''}
   </li>`;
 }
 
 // Aviso: platos que alguien marcó como compartidos y a los que les falta una parte
 function pintarPendientes(R) {
   if (editando) return '';
-  const lista = C.items.filter((it) => !it.todos && (Number(it.uds) || 1) === 1 && !(C.marcas[it.id] || {})[yo] && partesOtros(it).length && R.faltaPlato[it.id] > 0);
+  const lista = C.items.filter((it) => !it.todos && !(C.marcas[it.id] || {})[yo] && partesOtros(it).length && R.faltaPlato[it.id] > 0);
   if (!lista.length) return '';
   return `<div class="banda compartidos">${ico('gente')}<div><p><b>${lista.length === 1 ? 'Un plato compartido espera' : `${lista.length} platos compartidos esperan`} la otra parte.</b> Si eras tú, tócalo:</p>
-    <ul>${lista.map((it) => `<li><button data-a="irPlato" data-id="${esc(it.id)}"><b>${esc(it.nombre)}</b> · ${partesOtros(it).map(([p, n]) => `${esc(p)} lo marcó entre ${n}`).join(', ')} · falta ${eur(R.faltaPlato[it.id])}</button></li>`).join('')}</ul></div></div>`;
+    <ul>${lista.map((it) => `<li><button data-a="irPlato" data-id="${esc(it.id)}"><b>${esc(it.nombre)}</b> · ${partesOtros(it).map(([p, n]) => `${esc(p)} ${(Number(it.uds) || 1) > 1 ? `compartió 1 entre ${n}` : `lo marcó entre ${n}`}`).join(', ')} · falta ${eur(R.faltaPlato[it.id])}</button></li>`).join('')}</ul></div></div>`;
 }
 
 // Quién lo ha tomado, en una línea: gatitos + nombres + lo que paga cada uno
@@ -368,7 +368,11 @@ function pintarQuien(it, m, quien, reparto, uds, falta = 0) {
   if (!quien.length) return `<span class="sinmarcar">Nadie lo ha marcado todavía</span>`;
   const caras = `<span class="caras">${quien.slice(0, 5).map((p) => av(p)).join('')}</span>`;
   let txt;
-  if (uds > 1) txt = quien.map((p) => `${nom(p)} ×${m[p]}`).join(', ') + ` · ${eur(cts(it.precio / uds))} c/u`;
+  if (uds > 1) {
+    txt = quien.map((p) => `${nom(p)} ×${unidades(p, m[p])}`).join(', ') + ` · ${eur(cts(it.precio / uds))} c/u`;
+    if (falta) txt += ` · <span class="alerta">faltan ${eur(falta)}</span>`;
+    if (quien.reduce((a, p) => a + m[p], 0) > uds + 0.001) txt += ` · <span class="alerta">ojo: hay más unidades marcadas que en el ticket</span>`;
+  }
   else if (quien.some((p) => m[p] < 1)) {
     // Alguien lo ha marcado como compartido: se ve la parte de cada uno y lo que falta
     const partes = quien.reduce((a, p) => a + (m[p] < 1 ? m[p] : 0), 0);
@@ -547,21 +551,62 @@ async function ponerPeso(it, peso) {
 function preguntarCuantas(it) {
   const uds = Number(it.uds) || 1;
   const m = C.marcas[it.id] || {};
+  const k = cabezas(yo);
   const mias = m[yo] || 0;
   const otros = Object.entries(m).filter(([p, w]) => p !== yo && w > 0 && C.personas.includes(p));
   const deOtros = otros.reduce((a, [, w]) => a + Number(w), 0);
-  const libres = Math.max(0, uds - deOtros);
+  const libres = Math.max(0, Math.round((uds - deOtros) * 100) / 100);
   const max = Math.min(uds, 24);
-  const v = ventana(`<h2>¿Cuántas unidades de ${esc(it.nombre)} ${porOtro() ? 'ha tomado ' + esc(yo) : cabezas(yo) > 1 ? 'habéis tomado' : 'has tomado'}?</h2>
-    <p class="suave peq">En el ticket hay ${uds} · ${eur(cts(it.precio / uds))} cada unidad.
-    ${otros.length ? `<br>Ya marcadas: ${otros.map(([p, w]) => `${esc(p)} ${w}`).join(', ')} · quedan ${libres}.` : ''}</p>
-    <div class="numeros">${Array.from({ length: max + 1 }, (_, n) => `<button class="btn ${n === mias ? 'sel' : ''} ${n > libres && n !== mias ? 'pasa' : ''}" data-n="${n}">${n === 0 ? 'Ninguna' : n}</button>`).join('')}</div>`);
-  v.onclick = async (e) => {
-    const n = e.target.closest('[data-n]')?.dataset.n;
-    if (n == null) return;
-    cerrarVentana();
-    await ponerPeso(it, Number(n));
+  let enteras = Math.floor(mias + 1e-6);
+  const fr = mias - enteras;
+  const sugerido = partesOtros(it).map(([, n]) => n)[0] || 0;
+  let entre = fr > 0.001 ? Math.round(k / fr) : mias ? 0 : sugerido; // unidad compartida «1 entre N» (0 = no)
+  const unidad = cts(it.precio / uds);
+  const v = ventana(`<h2>¿Cuántas unidades de ${esc(it.nombre)} ${porOtro() ? 'ha tomado ' + esc(yo) : k > 1 ? 'habéis tomado' : 'has tomado'}?</h2>
+    <p class="suave peq">En el ticket hay ${uds} · ${eur(unidad)} cada una.
+    ${otros.length ? `<br>Ya marcadas: ${otros.map(([p, w]) => `${esc(p)} ${unidades(p, w)}`).join(', ')} · quedan ${String(libres).replace('.', ',')}.` : ''}</p>
+    <p class="sub">Enteras</p>
+    <div class="numeros" id="gEnteras">${Array.from({ length: max + 1 }, (_, n) => `<button class="btn" data-e="${n}">${n === 0 ? 'Ninguna' : n}</button>`).join('')}</div>
+    <p class="sub">¿Compartiste alguna con otros?</p>
+    <div class="numeros compartida" id="gEntre">
+      <button class="btn" data-c="0">No</button>${[2, 3, 4].map((n) => `<button class="btn" data-c="${k + n - 1}">1 entre ${k + n - 1}</button>`).join('')}<button class="btn" data-c="otro">Otro…</button>
+    </div>
+    <div id="cajaOtro" class="fila-num oculto" style="justify-content:center;margin-top:10px"><span class="suave peq">1 entre</span>${contador('entreN', Math.max(entre, k + 4), k + 1, 99)}</div>
+    <div class="banda info" id="teToca" style="margin-top:14px"></div>
+    <div class="grid2"><button class="btn" data-cerrar>Cancelar</button><button class="prim" id="okCuantas">Guardar</button></div>`);
+  const peso = () => Math.round((enteras + (entre ? k / entre : 0)) * 1e6) / 1e6;
+  const refrescar = () => {
+    v.querySelectorAll('[data-e]').forEach((x) => { x.classList.toggle('sel', Number(x.dataset.e) === enteras); x.classList.toggle('pasa', Number(x.dataset.e) > libres && Number(x.dataset.e) !== enteras); });
+    const esOtro = entre && ![k + 1, k + 2, k + 3].includes(entre);
+    v.querySelectorAll('[data-c]').forEach((x) => x.classList.toggle('sel', x.dataset.c === 'otro' ? !!esOtro : Number(x.dataset.c) === entre));
+    const w = peso();
+    $('#teToca', v).innerHTML = w ? `<p>${porOtro() ? `A ${esc(yo)} le toca` : k > 1 ? 'Os toca' : 'Te toca'}: <b>${unidades(yo, w)}</b> · <b>${eur(Math.round(unidad * w))}</b></p>` : '<p>No has marcado ninguna.</p>';
   };
+  refrescar();
+  v.onclick = (e) => {
+    const be = e.target.closest('[data-e]');
+    const bc = e.target.closest('[data-c]');
+    if (be) enteras = Number(be.dataset.e);
+    if (bc) {
+      if (bc.dataset.c === 'otro') { $('#cajaOtro', v).classList.remove('oculto'); entre = parseInt($('#cajaOtro input', v).value) || k + 4; }
+      else { entre = Number(bc.dataset.c); $('#cajaOtro', v).classList.add('oculto'); }
+    }
+    if (be || bc) refrescar();
+  };
+  v.oninput = (e) => { if (e.target.name === 'entreN') { entre = Math.max(k + 1, parseInt(e.target.value) || 0); refrescar(); } };
+  $('#okCuantas', v).onclick = async () => {
+    cerrarVentana();
+    await ponerPeso(it, peso());
+  };
+}
+
+// «1 + 1/2», «2», «1/3»… (una pareja cuenta 2 partes)
+function unidades(p, w) {
+  const e = Math.floor(w + 1e-6);
+  const f = w - e;
+  let t = e ? String(e) : '';
+  if (f > 0.001) t += (e ? ' + ' : '') + fraccion(p, f);
+  return t || '0';
 }
 
 // Plato de 1 unidad compartido: ¿entre cuántos? Solo cuenta tu parte; el resto lo marcan los demás.
@@ -570,7 +615,11 @@ const fraccion = (p, w) => `${cabezas(p)}/${partesDe(p, w)}`;
 // Partes ya marcadas por otros en un plato compartido: [[persona, «entre N»], …]
 function partesOtros(it) {
   const m = C.marcas[it.id] || {};
-  return Object.entries(m).filter(([p, w]) => p !== yo && w > 0 && w < 1 && C.personas.includes(p)).map(([p, w]) => [p, partesDe(p, w)]);
+  const varias = (Number(it.uds) || 1) > 1;
+  return Object.entries(m)
+    .map(([p, w]) => [p, varias ? w - Math.floor(w + 1e-6) : w])
+    .filter(([p, f]) => p !== yo && f > 0.001 && f < 1 && C.personas.includes(p))
+    .map(([p, f]) => [p, partesDe(p, f)]);
 }
 function preguntarEntreCuantos(it) {
   const m = C.marcas[it.id] || {};
@@ -890,7 +939,7 @@ document.addEventListener('click', (e) => {
   if (a === 'aforo') preguntarAforo();
   if (a === 'irPlato') {
     const it = C.items.find((x) => x.id === b.dataset.id);
-    if (it) preguntarEntreCuantos(it);
+    if (it) (Number(it.uds) || 1) > 1 ? preguntarCuantas(it) : preguntarEntreCuantos(it);
   }
   if (a === 'volver') marcarPor(yoReal);
   if (a === 'quitar') {
