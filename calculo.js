@@ -56,30 +56,66 @@
     return { sub, extra: repExtra, total, sinAsignar, totalPlatos, totalCuenta: totalPlatos + extra, porPlato };
   }
 
-  // Lee las líneas de un ticket (texto de la foto) y saca platos con precio.
+  // Lee un número de ticket: "7,95", "7.95", "3:95" y también "795" (la foto se comió la coma).
+  function numTicket(t) {
+    t = t.replace(/[€]/g, '');
+    if (/^\d{1,4}[.,:]\d{2}$/.test(t)) return Number(t.replace(/[,:]/, '.'));
+    if (/^\d{1,3}(?:\.\d{3})+,\d{2}$/.test(t)) return Number(t.replace(/\./g, '').replace(',', '.'));
+    if (/^\d{3,6}$/.test(t)) return Number(t) / 100;
+    return NaN;
+  }
+  const casi = (a, b) => Math.abs(a - b) < 0.015;
+
+  // Lee el texto de la foto de un ticket. Devuelve { items:[{nombre,precio,uds,revisar}], total }
   function leerTicket(texto) {
-    const fuera = /(total|subtotal|sub-total|iva|i\.v\.a|base|imponible|cambio|efectivo|tarjeta|visa|entregado|cuota|nif|cif|tel[eé]f|fecha|mesa|camarero|factura|ticket|gracias|propina|importe|pago)/i;
+    const fuera = /(total|subtotal|sub-total|i\.?v\.?a|base|imponible|cambio|efectivo|tarjeta|visa|entregado|cuota|nif|cif|tel[eé]?f|fecha|mesa|camarero|\d{3} ?\d{2} ?\d{2} ?\d{2}|factura|comprobante|gracias|propina|importe|pendiente|cobro|bruto|descripci)/i;
     const items = [];
-    for (let linea of String(texto).split(/\r?\n/)) {
-      linea = linea.replace(/\s+/g, ' ').trim();
-      if (linea.length < 3 || fuera.test(linea)) continue;
-      const m = linea.match(/^(.*?)[\s€]*(-?\d{1,4}(?:[.,]\d{3})*[.,]\d{2})\s*(?:€|eur|e)?\s*[a-z]?$/i);
-      if (!m) continue;
-      let nombre = m[1].trim();
-      let precio = Number(m[2].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'));
-      // Quitar precio unitario intermedio ("2 CAÑA 2,50 5,00")
-      nombre = nombre.replace(/\s+\d{1,4}[.,]\d{2}\s*€?$/, '').trim();
-      let uds = 1;
-      const q = nombre.match(/^(\d{1,2})\s*[xX*]?\s+(.+)$/) || nombre.match(/^(.+?)\s+[xX*]\s*(\d{1,2})$/);
-      if (q) {
-        if (/^\d/.test(q[1])) { uds = Number(q[1]); nombre = q[2]; }
-        else { nombre = q[1]; uds = Number(q[2]); }
+    let total = null;
+    let lineas = String(texto).split(/\r?\n/);
+    // Si hay cabecera de la tabla (Unid / Descripción / Cant.), los platos empiezan después
+    const cab = lineas.findIndex((l) => /descrip|\bunid|\bcant\.?\b|concepto|art[ií]culo/i.test(l));
+    if (cab >= 0) lineas = lineas.slice(cab + 1);
+    let acabado = false;
+    for (let linea of lineas) {
+      linea = linea.replace(/[«»"“”—_]/g, ' ').replace(/\s+/g, ' ').trim();
+      // El total del ticket (para comprobar)
+      const mt = linea.match(/\btotal\b(?!\s*(?:bruto|iva|neto))[^\d]*(\d{1,4}(?:[.,:]\d{2})|\d{3,6})\b/i);
+      if (mt && !/i\.?v\.?a|base|bruto/i.test(linea)) { const v = numTicket(mt[1]); if (v > 0 && total == null) total = v; }
+      // Al llegar a la base, el IVA o el total, se acaban los platos
+      if (items.length && /\b(total|base|subtotal|i\.?v\.?a)\b/i.test(linea)) acabado = true;
+      if (acabado || linea.length < 4 || fuera.test(linea)) continue;
+      // "7 95" al final = 7,95 (la foto se comió la coma)
+      linea = linea.replace(/(\d[.,:]\d{2} )(\d{1,3}) (\d{2})\s*$/, '$1$2,$3');
+      // Quitar basura del final (letras sueltas que no son del plato)
+      let tok = linea.split(' ');
+      while (tok.length && isNaN(numTicket(tok[tok.length - 1])) && tok[tok.length - 1].length <= 3 && !/\p{L}{3}/u.test(tok[tok.length - 1])) tok.pop();
+      // Números del final: [precio unidad] [importe]
+      const nums = [];
+      while (tok.length && nums.length < 2 && !isNaN(numTicket(tok[tok.length - 1]))) nums.unshift(numTicket(tok.pop()));
+      if (!nums.length) continue;
+      // Cantidad delante: "2", o "|", "l", "I" que suelen ser un 1 mal leído. Se ignora basura anterior.
+      let resto = tok.join(' ');
+      let uds = null;
+      const mq = resto.match(/(?:^|\s)(\d{1,2}|[|lI!\]])\s*[xX*]?\s+(?=\p{L})(.*)$/u);
+      if (mq) { uds = /\d/.test(mq[1]) ? Number(mq[1]) : 1; resto = mq[2]; }
+      else { const mx = resto.match(/^(.*\p{L}.*?)\s+[xX*]\s*(\d{1,2})$/u); if (mx) { resto = mx[1]; uds = Number(mx[2]); } }
+      let precio, revisar = false;
+      if (nums.length === 2) {
+        const [u, imp] = nums;
+        if (uds && casi(uds * u, imp)) precio = imp;
+        else if (u > 0 && Number.isInteger(Math.round(imp / u)) && casi(Math.round(imp / u) * u, imp) && imp / u <= 60) { uds = Math.round(imp / u); precio = imp; }
+        else { precio = imp; revisar = !(uds && imp / uds > 0.2); } // manda el importe (lo que se paga)
+      } else {
+        precio = nums[0];
+        if (uds > 1) revisar = true; // ¿es el precio de una o de todas?
       }
-      nombre = nombre.replace(/^[^\p{L}\d]+|[^\p{L}\d)]+$/gu, '').trim();
-      if (!nombre || !/\p{L}{2}/u.test(nombre) || !(precio > 0) || precio > 2000) continue;
-      items.push({ nombre: nombre.charAt(0).toUpperCase() + nombre.slice(1).toLowerCase(), precio, uds });
+      uds = uds || 1;
+      resto = resto.replace(/(?:\s+\S{0,2}\d\S{0,2})+$/u, '').replace(/(\p{L}{3,})\d+$/u, '$1');
+      let nombre = resto.replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').replace(/^[^\p{L}\d(]+|[^\p{L}\d)]+$/gu, '').replace(/\s+[>|]\s*$/, '').trim();
+      if (!nombre || !/\p{L}{3}/u.test(nombre) || !(precio > 0) || precio > 2000) continue;
+      items.push({ nombre: nombre.charAt(0).toUpperCase() + nombre.slice(1).toLowerCase(), precio, uds, revisar });
     }
-    return items;
+    return { items, total };
   }
 
   raiz.Calculo = { calcular, repartir, leerTicket, cent };

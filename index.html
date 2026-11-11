@@ -78,7 +78,8 @@ input::placeholder{color:var(--suave);opacity:.75}
 /* Personas */
 .gente{display:flex;align-items:center;gap:6px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none}
 .gente::-webkit-scrollbar{display:none}
-.av{--c:#0d9488;width:30px;height:30px;flex:0 0 30px;border-radius:50%;background:var(--c);color:#fff;display:grid;place-items:center;font-size:.8rem;font-weight:700;text-transform:uppercase}
+.av{--c:#f97316;width:30px;height:30px;flex:0 0 30px;border-radius:50%;background:color-mix(in srgb,var(--c) 18%,var(--tarjeta));display:grid;place-items:center;overflow:hidden}
+.av svg{width:84%;height:84%;margin-top:6%}
 .av.gr{width:44px;height:44px;flex-basis:44px;font-size:1rem}
 .persona{display:flex;align-items:center;gap:6px;background:var(--tarjeta);border:1.5px solid var(--linea);border-radius:99px;padding:3px 10px 3px 3px;font-size:.88rem;white-space:nowrap}
 .persona.yo{border-color:var(--prim);font-weight:650}
@@ -103,12 +104,18 @@ input::placeholder{color:var(--suave);opacity:.75}
 .pp .nom{flex:1;min-width:0;font-weight:550}
 .uds{display:inline-block;background:var(--chip);border-radius:6px;padding:0 6px;margin-right:6px;font-size:.82rem;color:var(--suave);font-weight:600}
 .pre{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
-.quien{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0 36px}
+.quien{display:flex;gap:8px;align-items:center;margin:8px 0 0 36px}
 .chip{display:inline-flex;align-items:center;gap:5px;background:var(--chip);border-radius:99px;padding:2px 9px 2px 3px;font-size:.8rem;font-variant-numeric:tabular-nums}
 .chip .av{width:20px;height:20px;flex-basis:20px;font-size:.62rem}
 .chip.todos{padding-left:9px;background:var(--prim);color:var(--prim-t);font-weight:600}
+.caras{display:inline-flex;flex:0 0 auto}
+.caras .av{width:22px;height:22px;flex-basis:22px;font-size:.62rem;border:2px solid var(--tarjeta);margin-left:-6px}
+.caras .av:first-child{margin-left:0}
+.mio .caras .av{border-color:var(--mio)}
+.nombres{flex:1;min-width:0;font-size:.82rem;color:var(--suave);line-height:1.3}
+.nombres b{color:var(--texto)}
 .sinmarcar{font-size:.8rem;color:var(--alerta)}
-.pie{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0 0 36px}
+.pie{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 0 36px}
 .contador{display:inline-flex;align-items:center;border:1.5px solid var(--prim);border-radius:10px;overflow:hidden;background:var(--tarjeta)}
 .contador button{width:34px;height:32px;border:0;background:none;font-size:1.1rem;color:var(--prim2);font-weight:700}
 .contador span{min-width:64px;text-align:center;font-size:.82rem;font-weight:600}
@@ -123,10 +130,18 @@ input::placeholder{color:var(--suave);opacity:.75}
 #platos.ed-lista{gap:0}
 .plato.ed .nomIn{grid-column:1/2}
 .plato.ed .x{grid-row:1/3;grid-column:2;align-self:center}
+.entreTodos{grid-column:1/3;display:flex;align-items:center;gap:8px;border:0;background:none;padding:2px 0;font-size:.85rem;color:var(--suave);text-align:left}
+.entreTodos .caja{width:20px;height:20px;border-radius:6px;border:2px solid var(--linea);display:grid;place-items:center;font-size:.75rem;color:var(--prim-t);flex:0 0 20px}
+.entreTodos.on{color:var(--prim2);font-weight:600}.entreTodos.on .caja{background:var(--prim);border-color:var(--prim)}
+.numeros{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.numeros .btn{font-size:1.1rem;font-weight:650;min-height:52px}
+.numeros .btn:first-child{grid-column:span 2;font-size:.95rem}
+.numeros .pasa{opacity:.45}
 .plato.ed .fila{display:flex;gap:8px;grid-column:1/2}
+.resumen li[role=button]{cursor:pointer}
 .x{width:40px;height:40px;border:0;border-radius:10px;background:var(--chip);color:var(--suave);font-size:1rem}
 .minis{display:flex;align-items:center;gap:6px;flex:0 0 auto}
-.minis input{width:52px;text-align:center;padding:9px 6px}
+.minis input{width:44px;text-align:center;padding:9px 6px}
 .minis small{color:var(--suave);font-size:.8rem}
 .eurIn{position:relative;flex:1;min-width:0}
 .eurIn input{text-align:right;padding-right:28px}
