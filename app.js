@@ -127,6 +127,7 @@ function normalizar(d) {
     personas: Array.isArray(d.personas) ? d.personas : [],
     marcas: d.marcas && typeof d.marcas === 'object' ? d.marcas : {},
     comensales: Number(d.comensales) || '',
+    creador: d.creador || '',
     totalTicket: d.totalTicket || '',
   };
 }
@@ -226,7 +227,7 @@ function pintarInicio() {
     const k = clave();
     try {
       const nid = await rpc('split_create', {
-        p_data: { titulo, comensales, personas: [nombre], pagador: f.get('pago') ? nombre : '', items: [] },
+        p_data: { titulo, comensales, creador: nombre, personas: [nombre], pagador: f.get('pago') ? nombre : '', items: [] },
         p_clave: k,
       });
       ls.set('nombre', nombre);
@@ -725,31 +726,49 @@ function preguntarTodos(it) {
   };
 }
 
+// Quién creó la cuenta (para no ofrecer su nombre a los demás)
+const creador = () => (C.creador && C.personas.includes(C.creador) ? C.creador : C.personas[0] || '');
+const mismoNombre = (a, b) => {
+  const n = (x) => String(x).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return n(a) === n(b);
+};
+
 function pintarQuienEres() {
   quitarBarra();
   const guardado = ls.get('nombre', '');
-  const lleno = tope() && !faltan();
+  const lleno = tope() > 1 && !faltan(); // con 1 (lo de serie) no se avisa: se amplía solo
+  const cr = creador();
+  const otros = C.personas.filter((p) => p !== cr);
   $('#app').innerHTML = `
     <div class="cabecera"><a href="#" class="icono" aria-label="Inicio">${ico('atras')}</a><h1>${esc(C.titulo)}</h1></div>
+    ${cr ? `<div class="creada">${av(cr)}<span>Cuenta creada por <b>${esc(cr)}</b>${tope() > 1 ? ` · sois ${tope()}${faltan() ? `, faltan ${faltan()} por entrar` : ''}` : ''}</span></div>` : ''}
     <section class="tarjeta">
-      <h2>¿Quién eres?</h2>
-      <p class="suave peq" style="margin:4px 0 14px">Elige tu nombre o escríbelo, y luego toca lo que has tomado.${tope() ? ` Sois ${tope()}${faltan() ? `; faltan ${faltan()} por entrar` : ''}.` : ''}</p>
-      ${C.personas.length ? `<div class="lista-personas">${C.personas.map((p) => `<button data-p="${esc(p)}">${av(p, 'gr')}<span>${esc(p)}</span></button>`).join('')}</div>` : ''}
-      ${lleno
-        ? `<div class="banda info">${ico('gente')}<p>La cuenta es para ${tope()} y ya están. Si eres uno más, escribe tu nombre y se amplía.</p></div>`
-        : C.personas.length ? '<p class="suave peq" style="margin-bottom:8px">¿No sales? Escribe tu nombre:</p>' : ''}
-      <form id="fYo" style="display:flex;gap:8px">
-        <input name="n" placeholder="Tu nombre · en pareja: Marta y Pablo" maxlength="40" required autocomplete="given-name" value="${esc(C.personas.includes(guardado) ? '' : guardado)}">
-        <button class="prim">Entrar</button>
+      <h2>¿Cómo te llamas?</h2>
+      <p class="suave peq" style="margin:4px 0 14px">Escribe tu nombre y luego toca lo que has tomado. Si pagáis en pareja: «Marta y Pablo».</p>
+      ${lleno ? `<div class="banda info">${ico('gente')}<p>La cuenta es para ${tope()} y ya están. Si eres uno más, escribe tu nombre y se amplía.</p></div>` : ''}
+      <form id="fYo" class="entrar">
+        <input name="n" placeholder="Tu nombre" maxlength="40" required autocomplete="given-name" enterkeyhint="go" value="${esc(C.personas.some((p) => mismoNombre(p, guardado)) ? '' : guardado)}">
+        <button class="prim ancho">Entrar</button>
       </form>
+      ${otros.length ? `<p class="sub" style="margin-top:20px">¿Ya estabas apuntado?</p>
+      <div class="lista-personas">${otros.map((p) => `<button data-p="${esc(p)}">${av(p, 'gr')}<span>${esc(p)}</span></button>`).join('')}</div>` : ''}
     </section>`;
   $('.lista-personas') && ($('.lista-personas').onclick = (e) => { const p = e.target.closest('[data-p]')?.dataset.p; if (p) elegirYo(p); });
-  $('#fYo') && ($('#fYo').onsubmit = async (e) => {
+  $('#fYo').onsubmit = async (e) => {
     e.preventDefault();
     const n = new FormData(e.target).get('n').trim();
     if (!n) return;
+    // ¿Ya existe ese nombre? Preguntar en vez de crear otro igual
+    const ya = C.personas.find((p) => mismoNombre(p, n));
+    if (ya) {
+      const v = ventana(`<div class="centro">${av(ya, 'gr')}</div><h2 class="centro" style="margin-top:8px">¿Eres ${esc(ya)}?</h2>
+        <p class="suave peq centro">${ya === cr ? `${esc(ya)} es quien creó la cuenta.` : `Ya hay alguien apuntado como ${esc(ya)}.`}</p>
+        <div class="botones"><button class="prim ancho" id="soyYo">Sí, soy ${esc(ya)}</button><button class="btn ancho" data-cerrar>No, pondré otro nombre</button></div>`);
+      $('#soyYo', v).onclick = () => { cerrarVentana(); elegirYo(ya); };
+      return;
+    }
     if (await anadirPersona(n)) elegirYo(n);
-  });
+  };
 }
 
 // Añade a alguien comprobando que no se pasa del número de personas
@@ -757,9 +776,9 @@ async function anadirPersona(n) {
   if (C.personas.includes(n)) return true;
   const k = cabezas(n);
   if (tope() && hay() + k > tope()) {
-    // No cabe: preguntar si de verdad sois más y ampliar
+    // No cabe: si se dejó el 1 de serie, se amplía sin preguntar; si no, preguntar si de verdad sois más
     const nuevo = hay() + k;
-    const si = await new Promise((ok) => {
+    const si = tope() <= 1 ? true : await new Promise((ok) => {
       const v = ventana(`<h2>¿Sois ${nuevo}?</h2>
         <p class="suave peq">La cuenta es para ${tope()} ${tope() === 1 ? 'persona' : 'personas'}${faltan() ? ` y solo queda sitio para ${faltan()}` : ' y ya estáis todos'}. Si ${k > 1 ? 'sois' : 'eres'} ${k > 1 ? 'más' : 'uno más'}, se amplía a ${nuevo}.</p>
         <div class="grid2"><button class="btn" data-cerrar>No, me equivoqué</button><button class="prim" id="siMas">Sí, somos ${nuevo}</button></div>`);
