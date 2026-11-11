@@ -36,6 +36,7 @@
     let sinAsignar = 0;
     let totalPlatos = 0;
     const porPlato = {};
+    const faltaPlato = {};
     for (const it of cuenta.items || []) {
       const t = cent(it.precio);
       totalPlatos += t;
@@ -49,10 +50,28 @@
       else
         for (const [p, w] of Object.entries(marcas[it.id] || {}))
           if (personas.includes(p) && w > 0) pesos[p] = Number(w);
-      const r = repartir(t, pesos);
-      if (r['\u0000faltan']) { sinAsignar += r['\u0000faltan']; delete r['\u0000faltan']; }
+      let r, falta = 0;
+      const partes = Object.entries(pesos).filter(([p, w]) => p !== '\u0000faltan' && w < 1);
+      if (!it.todos && (Number(it.uds) || 1) === 1 && partes.length) {
+        // Plato compartido: quien marca «entre N» paga solo su parte (peso < 1).
+        // Lo que queda se lo reparten quienes lo marcaron entero; si no hay nadie, queda por marcar.
+        const enteros = Object.fromEntries(Object.entries(pesos).filter(([, w]) => w >= 1));
+        const suma = partes.reduce((x, [, w]) => x + w, 0);
+        const resto = suma >= 0.999 ? 0 : 1 - suma;
+        const r1 = repartir(t, { ...Object.fromEntries(partes), '\u0000resto': resto });
+        const quedan = r1['\u0000resto'] || 0;
+        delete r1['\u0000resto'];
+        const r2 = Object.keys(enteros).length ? repartir(quedan, enteros) : {};
+        if (!Object.keys(enteros).length) falta = quedan;
+        r = { ...r1, ...r2 };
+      } else {
+        r = repartir(t, pesos);
+        if (r['\u0000faltan']) { falta = r['\u0000faltan']; delete r['\u0000faltan']; }
+        if (!Object.keys(r).length) falta = t;
+      }
+      sinAsignar += falta;
+      faltaPlato[it.id] = falta;
       porPlato[it.id] = r;
-      if (!Object.keys(r).length) sinAsignar += t;
       for (const [p, c] of Object.entries(r)) sub[p] += c;
     }
     // Propina / extra: se reparte en proporción a lo que ha tomado cada uno.
@@ -65,7 +84,7 @@
     const repExtra = repartir(extraAsignado, asignado ? sub : {});
     const total = {};
     for (const p of personas) total[p] = sub[p] + (repExtra[p] || 0);
-    return { sub, extra: repExtra, total, sinAsignar, totalPlatos, totalCuenta: totalPlatos + extra, porPlato };
+    return { sub, extra: repExtra, total, sinAsignar, totalPlatos, totalCuenta: totalPlatos + extra, porPlato, faltaPlato };
   }
 
   // Lee un número de ticket: "7,95", "7.95", "3:95" y también "795" (la foto se comió la coma).

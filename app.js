@@ -163,7 +163,7 @@ function guardar() {
   }, 600);
 }
 
-const contador = (nombre, valor, min = 1, max = 40) => `<div class="stepper" data-min="${min}" data-max="${max}">
+const contador = (nombre, valor, min = 1, max = 99) => `<div class="stepper" data-min="${min}" data-max="${max}">
   <button type="button" data-paso="-1" aria-label="Uno menos">${ico('menos', 18)}</button>
   <input name="${nombre}" value="${valor}" inputmode="numeric" aria-label="Número de personas">
   <button type="button" data-paso="1" aria-label="Uno más">${ico('mas', 18)}</button></div>`;
@@ -199,7 +199,7 @@ function pintarInicio() {
         <label class="campo"><span>¿Qué es?</span><input name="titulo" placeholder="Cena del viernes" maxlength="60" required></label>
         <label class="campo"><span>Tu nombre</span><input name="yo" placeholder="Ej. Ana · en pareja: Ana y Salvi" maxlength="40" required autocomplete="given-name" value="${esc(ls.get('nombre', ''))}"></label>
         <div class="campo"><span>¿Cuántos sois en total?</span>
-          <div class="fila-num">${contador('comensales', 2, 1, 40)}<small class="suave">Contándote a ti. Una pareja cuenta como 2.</small></div></div>
+          <div class="fila-num">${contador('comensales', 1, 1, 99)}<small class="suave">Contándote a ti. Una pareja cuenta como 2. Se puede cambiar después.</small></div></div>
         <label class="casilla"><input type="checkbox" name="pago" checked><span>He pagado yo</span></label>
         <button class="prim ancho">Crear y apuntar el ticket</button>
       </form>
@@ -288,9 +288,9 @@ function pintar() {
 
     <div class="gente">
       ${C.personas.map((p) => `<button class="persona ${p === yo ? 'yo' : ''}" data-a="${p === yoReal ? 'cambiarYo' : 'porOtro'}" data-p="${esc(p)}">${av(p)}<span>${esc(p)}${p === yoReal ? ' <small>(tú)</small>' : ''}</span></button>`).join('')}
-      ${!tope() || faltan() ? `<button class="persona mas" data-a="persona">${ico('mas', 16)} Añadir</button>` : ''}
+      <button class="persona mas" data-a="persona">${ico('mas', 16)} Añadir</button>
     </div>
-    ${tope() ? `<p class="aforo ${faltan() ? '' : 'completo'}">${faltan() ? `${hay()} de ${tope()} personas · faltan ${faltan()} por entrar` : `${ico('check', 14)} Estáis todos (${tope()})`}</p>` : ''}
+    <button class="aforo ${tope() && !faltan() ? 'completo' : ''}" data-a="aforo">${!tope() ? `${hay()} ${hay() === 1 ? 'persona' : 'personas'}` : faltan() ? `${hay()} de ${tope()} personas · faltan ${faltan()} por entrar` : `${ico('check', 14)} Estáis todos (${tope()})`}<span>${ico('lapiz', 13)} Cambiar</span></button>
 
     ${porOtro() ? `<div class="banda alerta"><p>Estás marcando lo de <b>${esc(yo)}</b>.</p><button class="btn peq" data-a="quitar" data-p="${esc(yo)}">Quitar</button><button class="prim" data-a="volver">Volver a mí</button></div>` : ''}
     ${!editando && C.personas.length === 1 && C.items.length ? `<div class="banda info">${ico('enlace')}<p>Ahora <b>pasa el enlace</b> al grupo. Lo verán al momento; no tienen que registrarse, solo elegir su nombre.</p></div>` : ''}
@@ -338,13 +338,14 @@ function pintarPlato(it, R) {
       <span class="nom">${uds > 1 ? `<span class="uds">${uds}×</span>` : ''}${esc(it.nombre)}</span>
       <span class="pre">${eur(cts(it.precio))}</span>
     </div>
-    <div class="quien">${pintarQuien(it, m, quien, reparto, uds)}</div>
+    <div class="quien">${pintarQuien(it, m, quien, reparto, uds, R.faltaPlato[it.id] || 0)}</div>
+    ${!it.todos && uds === 1 && mio ? `<div class="pie"><span class="suave peq">${mio < 1 ? `${porOtro() ? esc(yo) : 'Tú'}: <b>${fraccion(yo, mio)} · ${eur(reparto[yo] || 0)}</b>` : '¿Lo compartiste con alguien?'}</span><button class="btn peq" data-a="repartir">${ico('gente', 15)} ${mio < 1 ? 'Cambiar' : 'Dividir'}</button></div>` : ''}
     ${!it.todos && uds > 1 ? `<div class="pie"><span class="suave peq">${mio ? `${porOtro() ? esc(yo) : 'Tú'}: <b>${mio} de ${uds}</b>` : `Hay ${uds} · ${eur(cts(it.precio / uds))} c/u`}</span><button class="btn peq" data-a="marcar">${mio ? 'Cambiar' : 'Marcar cuántas'}</button></div>` : ''}
   </li>`;
 }
 
 // Quién lo ha tomado, en una línea: gatitos + nombres + lo que paga cada uno
-function pintarQuien(it, m, quien, reparto, uds) {
+function pintarQuien(it, m, quien, reparto, uds, falta = 0) {
   const nom = (p) => (p === yo ? '<b>' + esc(p) + '</b>' : esc(p));
   if (it.todos) {
     const cab = Math.max(tope(), hay()) || 1;
@@ -354,7 +355,13 @@ function pintarQuien(it, m, quien, reparto, uds) {
   const caras = `<span class="caras">${quien.slice(0, 5).map((p) => av(p)).join('')}</span>`;
   let txt;
   if (uds > 1) txt = quien.map((p) => `${nom(p)} ×${m[p]}`).join(', ') + ` · ${eur(cts(it.precio / uds))} c/u`;
-  else if (quien.length === 1) txt = nom(quien[0]);
+  else if (quien.some((p) => m[p] < 1)) {
+    // Alguien lo ha marcado como compartido: se ve la parte de cada uno y lo que falta
+    const partes = quien.reduce((a, p) => a + (m[p] < 1 ? m[p] : 0), 0);
+    txt = quien.map((p) => `${nom(p)}${m[p] < 1 ? ` (${fraccion(p, m[p])})` : ''} ${eur(reparto[p] || 0)}`).join(' · ');
+    if (falta) txt += ` · <span class="alerta">falta ${eur(falta)}</span>`;
+    if (partes > 1.001) txt += ` · <span class="alerta">ojo: hay más partes marcadas que el plato</span>`;
+  } else if (quien.length === 1) txt = nom(quien[0]);
   else {
     const vals = quien.map((p) => reparto[p] || 0);
     txt = vals.every((v) => Math.abs(v - vals[0]) <= 1)
@@ -449,7 +456,7 @@ function pintarEdicion() {
       </li>`).join('')}</ul>` : ''}
     <div class="ajustes-ed">
       <label class="campo"><span>Total del ticket (para comprobar)</span><span class="eurIn"><input id="totalTicket" inputmode="decimal" value="${dec(C.totalTicket)}" placeholder="0,00"></span></label>
-      <div class="campo"><span>¿Cuántos sois?</span><div class="fila-num">${contador('comensalesEd', tope() || hay(), Math.max(1, hay()), 40)}<small class="suave">Ya han entrado ${hay()}.</small></div></div>
+      <div class="campo"><span>¿Cuántos sois?</span><div class="fila-num">${contador('comensalesEd', tope() || hay(), Math.max(1, hay()), 99)}<small class="suave">Ya han entrado ${hay()}.</small></div></div>
       <label class="campo"><span>Nombre de la cuenta</span><input id="titulo" value="${esc(C.titulo)}" maxlength="60"></label>
       ${esCreador() ? `<button class="peligro-texto" data-a="borrarCuenta">${ico('papelera', 16)} Borrar esta cuenta</button>` : ''}
     </div>`;
@@ -504,6 +511,7 @@ async function clicPlato(e) {
     guardar();
     return pintar();
   }
+  if (a === 'repartir') return preguntarEntreCuantos(it);
   if (a !== 'marcar') return;
   if (it.todos) return preguntarTodos(it);
   if ((Number(it.uds) || 1) > 1) return preguntarCuantas(it);
@@ -540,6 +548,58 @@ function preguntarCuantas(it) {
   };
 }
 
+// Plato de 1 unidad compartido: ¿entre cuántos? Solo cuenta tu parte; el resto lo marcan los demás.
+const partesDe = (p, w) => Math.round(cabezas(p) / w); // peso 0,5 → «entre 2»
+const fraccion = (p, w) => `${cabezas(p)}/${partesDe(p, w)}`;
+function preguntarEntreCuantos(it) {
+  const m = C.marcas[it.id] || {};
+  const w = m[yo] || 0;
+  const k = cabezas(yo);
+  const actual = w > 0 && w < 1 ? partesDe(yo, w) : k;
+  const quien = porOtro() ? esc(yo) : k > 1 ? 'vosotros' : 'tú';
+  const opciones = Array.from({ length: 7 }, (_, i) => k + i);
+  const v = ventana(`<h2>¿Entre cuántas personas lo compartisteis?</h2>
+    <p class="suave peq">${esc(it.nombre)} · ${eur(cts(it.precio))}. Solo se te cuenta tu parte; los demás marcan la suya con el nombre que usen.</p>
+    <div class="numeros partes">${opciones.map((n) => `<button class="btn ${n === actual ? 'sel' : ''}" data-n="${n}"><span>${n === k ? (k > 1 ? 'Solo nosotros' : 'Solo yo') : `Entre ${n}`}</span><small>${n === k ? 'entero' : `${quien === 'tú' ? 'tu' : 'su'} parte ${eur(Math.round((cts(it.precio) * k) / n))}`}</small></button>`).join('')}
+      <button class="btn ${actual > k + 6 ? 'sel' : ''}" id="otroN"><span>${actual > k + 6 ? `Entre ${actual}` : 'Otro número'}</span><small>${actual > k + 6 ? `parte ${eur(Math.round((cts(it.precio) * k) / actual))}` : 'más personas'}</small></button></div>
+    <div id="cajaOtro" class="fila-num oculto" style="justify-content:center;margin-top:14px">${contador('otroN', Math.max(actual, k + 7), k + 1, 99)}<button class="prim" id="okOtro">Aplicar</button></div>`);
+  $('#otroN', v).onclick = (e) => { e.stopPropagation(); $('#cajaOtro', v).classList.remove('oculto'); $('#cajaOtro input', v).focus(); };
+  $('#okOtro', v).onclick = async (e) => {
+    e.stopPropagation();
+    const n = Math.min(99, Math.max(k + 1, parseInt($('#cajaOtro input', v).value) || 0));
+    cerrarVentana();
+    await ponerPeso(it, Math.round((k / n) * 1e6) / 1e6);
+  };
+  v.onclick = async (e) => {
+    const n = Number(e.target.closest('[data-n]')?.dataset.n);
+    if (!n) return;
+    cerrarVentana();
+    await ponerPeso(it, n === k ? k : Math.round((k / n) * 1e6) / 1e6);
+  };
+}
+
+// Cambiar cuántos sois (cualquiera puede, nunca por debajo de los que ya han entrado)
+async function guardarComensales(n) {
+  C.comensales = n;
+  clearTimeout(guardarT);
+  guardarT = null;
+  const { marcas, personas, ...datos } = C;
+  await llamar('split_save', { p_id: id, p_data: datos });
+}
+function preguntarAforo() {
+  const v = ventana(`<h2>¿Cuántos sois?</h2>
+    <p class="suave peq">Contando a todos. Una pareja cuenta como 2. Ya han entrado ${hay()}.</p>
+    <div class="fila-num" style="justify-content:center;margin:6px 0 16px">${contador('aforoN', tope() || hay(), Math.max(1, hay()), 99)}</div>
+    <div class="grid2"><button class="btn" data-cerrar>Cancelar</button><button class="prim" id="okAforo">Guardar</button></div>`);
+  $('#okAforo', v).onclick = async () => {
+    const n = Math.max(hay(), parseInt($('[name=aforoN]', v).value) || 1);
+    cerrarVentana();
+    try { await guardarComensales(n); } catch { return; }
+    pintar();
+    aviso(`Ahora sois ${n}`);
+  };
+}
+
 // Plato puesto «para todos»: ¿que cada uno marque lo suyo?
 function preguntarTodos(it) {
   const cab = Math.max(tope(), hay()) || 1;
@@ -566,12 +626,12 @@ function pintarQuienEres() {
       <p class="suave peq" style="margin:4px 0 14px">No hace falta registrarse: elige tu nombre y luego toca lo que has tomado.${tope() ? ` Sois ${tope()}${faltan() ? `; faltan ${faltan()} por entrar` : ''}.` : ''}</p>
       ${C.personas.length ? `<div class="lista-personas">${C.personas.map((p) => `<button data-p="${esc(p)}">${av(p, 'gr')}<span>${esc(p)}</span></button>`).join('')}</div>` : ''}
       ${lleno
-        ? `<div class="banda info">${ico('gente')}<p>Ya estáis todos. Si no sales, pide a quien creó la cuenta que suba el número de personas.</p></div>`
-        : `${C.personas.length ? '<p class="suave peq" style="margin-bottom:8px">¿No sales? Escribe tu nombre:</p>' : ''}
+        ? `<div class="banda info">${ico('gente')}<p>La cuenta es para ${tope()} y ya están. Si eres uno más, escribe tu nombre y se amplía.</p></div>`
+        : C.personas.length ? '<p class="suave peq" style="margin-bottom:8px">¿No sales? Escribe tu nombre:</p>' : ''}
       <form id="fYo" style="display:flex;gap:8px">
         <input name="n" placeholder="Tu nombre · en pareja: Ana y Salvi" maxlength="40" required autocomplete="given-name" value="${esc(C.personas.includes(guardado) ? '' : guardado)}">
         <button class="prim">Entrar</button>
-      </form>`}
+      </form>
     </section>`;
   $('.lista-personas') && ($('.lista-personas').onclick = (e) => { const p = e.target.closest('[data-p]')?.dataset.p; if (p) elegirYo(p); });
   $('#fYo') && ($('#fYo').onsubmit = async (e) => {
@@ -587,8 +647,17 @@ async function anadirPersona(n) {
   if (C.personas.includes(n)) return true;
   const k = cabezas(n);
   if (tope() && hay() + k > tope()) {
-    aviso(faltan() ? `Solo queda sitio para ${faltan()} ${faltan() === 1 ? 'persona' : 'personas'}.` : 'Ya estáis todos.');
-    return false;
+    // No cabe: preguntar si de verdad sois más y ampliar
+    const nuevo = hay() + k;
+    const si = await new Promise((ok) => {
+      const v = ventana(`<h2>¿Sois ${nuevo}?</h2>
+        <p class="suave peq">La cuenta es para ${tope()} ${tope() === 1 ? 'persona' : 'personas'}${faltan() ? ` y solo queda sitio para ${faltan()}` : ' y ya estáis todos'}. Si ${k > 1 ? 'sois' : 'eres'} ${k > 1 ? 'más' : 'uno más'}, se amplía a ${nuevo}.</p>
+        <div class="grid2"><button class="btn" data-cerrar>No, me equivoqué</button><button class="prim" id="siMas">Sí, somos ${nuevo}</button></div>`);
+      v.closest('.fondo').addEventListener('cerrar', () => ok(false));
+      $('#siMas', v).onclick = () => { ok(true); cerrarVentana(); };
+    });
+    if (!si) return false;
+    try { await guardarComensales(nuevo); } catch { return false; }
   }
   try {
     await llamar('split_join', { p_id: id, p_persona: n });
@@ -793,6 +862,7 @@ document.addEventListener('click', (e) => {
     $('#cambiar', v).onclick = () => { cerrarVentana(); yo = yoReal = null; ls.set('yo:' + id, null); pintar(); };
   }
   if (a === 'porOtro') marcarPor(b.dataset.p);
+  if (a === 'aforo') preguntarAforo();
   if (a === 'volver') marcarPor(yoReal);
   if (a === 'quitar') {
     const p = b.dataset.p;
@@ -809,8 +879,7 @@ document.addEventListener('click', (e) => {
     };
   }
   if (a === 'persona') {
-    if (tope() && !faltan()) return aviso('Ya estáis todos.');
-    const v = ventana(`<h2>Añadir a alguien</h2><p class="suave peq">Para alguien que no va a abrir el enlace. Después marcas lo que ha tomado y vuelves a ti.${tope() ? ` Queda sitio para ${faltan()}.` : ''}</p>
+    const v = ventana(`<h2>Añadir a alguien</h2><p class="suave peq">Para alguien que no va a abrir el enlace. Después marcas lo que ha tomado y vuelves a ti.${tope() ? (faltan() ? ` Queda sitio para ${faltan()}.` : ` Ya estáis ${tope()}: al añadir a alguien se amplía.`) : ''}</p>
       <form id="fPersona" style="display:flex;gap:8px"><input name="n" placeholder="Nombre · en pareja: Ana y Salvi" maxlength="40" required><button class="prim">Añadir</button></form>`);
     $('#fPersona', v).onsubmit = async (ev) => {
       ev.preventDefault();
