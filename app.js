@@ -80,6 +80,7 @@ let yoReal = null; // quien eres tú en este móvil
 let editando = false;
 let pendientes = 0; // llamadas en curso (para no pisar con el refresco)
 let guardarT = null;
+let cambiosHechos = 0; // cuenta los cambios enviados desde este móvil
 let recienCreada = null;
 
 const porOtro = () => yo !== yoReal;
@@ -99,11 +100,12 @@ function aviso(txt) {
 async function cargar() {
   if (pendientes || guardarT || !id) return;
   const cid = id; // si mientras llega la respuesta te vas a otra pantalla, se ignora
+  const s0 = cambiosHechos; // si mientras llega la respuesta tocas algo, esa respuesta ya es vieja: se ignora
   try {
     const r = await rpc('split_get', { p_id: cid });
     if (cid !== id) return;
     if (!r) { olvidar(cid); pintarError('Esta cuenta no existe o la han borrado.'); return; }
-    if (pendientes || guardarT) return;
+    if (pendientes || guardarT || cambiosHechos !== s0) return;
     if (r.ver !== ver) {
       ver = r.ver;
       C = normalizar(r.data);
@@ -143,10 +145,16 @@ function olvidar(cid) {
   ['yo:', 'clave:'].forEach((k) => ls.set(k + cid, null));
 }
 
+// Los cambios salen en fila, uno detrás de otro: así llegan al servidor en el orden en que se hicieron
+// (si no, marcar y desmarcar rápido con mala cobertura podía llegar al revés).
+let cola = Promise.resolve();
 async function llamar(fn, args) {
   pendientes++;
+  cambiosHechos++;
+  const turno = cola.then(() => rpc(fn, args));
+  cola = turno.catch(() => {});
   try {
-    const v = await rpc(fn, args);
+    const v = await turno;
     // Solo damos por buena la versión si nadie más ha cambiado nada entre medias.
     if (typeof v === 'number' && v === ver + 1) ver = v;
     else ver = -1;
@@ -204,7 +212,7 @@ function pintarInicio() {
         <label class="campo"><span>¿Qué es?</span><input name="titulo" placeholder="Cena del viernes" maxlength="60" required></label>
         <label class="campo"><span>Tu nombre</span><input name="yo" placeholder="Ej. Ana · en pareja: Marta y Pablo" maxlength="40" required autocomplete="given-name" value="${esc(ls.get('nombre', ''))}"></label>
         <div class="campo"><span>¿Cuántos sois en total?</span>
-          <div class="fila-num">${contador('comensales', 1, 1, 99)}<small class="suave">Contándote a ti. Una pareja cuenta como 2. Se puede cambiar después.</small></div></div>
+          <div class="fila-num">${contador('comensales', 1, 1, 99)}<small class="suave">Contándote a ti; una pareja cuenta como 2. Si lo dejas en 1, podrá entrar quien sea.</small></div></div>
         <label class="casilla"><input type="checkbox" name="pago" checked><span>He pagado yo</span></label>
         <button class="prim ancho">Crear y apuntar el ticket</button>
       </form>
@@ -220,14 +228,15 @@ function pintarInicio() {
     const titulo = f.get('titulo').trim();
     const comensales = Math.max(1, parseInt(f.get('comensales')) || 1);
     if (!nombre || !titulo) return;
-    if (cabezas(nombre) > comensales) return aviso(`«${nombre}» son ${cabezas(nombre)} personas: sube el número de personas.`);
+    if (comensales > 1 && cabezas(nombre) > comensales) return aviso(`«${nombre}» son ${cabezas(nombre)} personas: sube el número de personas.`);
     const b = e.target.querySelector('button.prim');
     b.disabled = true;
     b.textContent = 'Creando…';
     const k = clave();
     try {
       const nid = await rpc('split_create', {
-        p_data: { titulo, comensales, creador: nombre, personas: [nombre], pagador: f.get('pago') ? nombre : '', items: [] },
+        // Con el 1 de serie, la cuenta queda sin límite de personas (entra quien sea, sin preguntas)
+        p_data: { titulo, comensales: comensales > 1 ? comensales : '', creador: nombre, personas: [nombre], pagador: f.get('pago') ? nombre : '', items: [] },
         p_clave: k,
       });
       ls.set('nombre', nombre);
@@ -786,7 +795,8 @@ async function anadirPersona(n) {
       $('#siMas', v).onclick = () => { ok(true); cerrarVentana(); };
     });
     if (!si) return false;
-    try { await guardarComensales(nuevo); } catch { return false; }
+    // Si era el 1 de serie (cuentas antiguas), se quita el límite; si no, se amplía al número nuevo
+    try { await guardarComensales(tope() <= 1 ? '' : nuevo); } catch { return false; }
   }
   try {
     await llamar('split_join', { p_id: id, p_persona: n });
