@@ -40,20 +40,20 @@ const P = {
 };
 const ico = (n, t = 20) => `<svg class="i" width="${t}" height="${t}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
 
-// ---------- gatitos: uno por persona, cada uno de un color ----------
-const COLORES = ['#f97316', '#8b5cf6', '#ec4899', '#0ea5e9', '#22c55e', '#eab308', '#ef4444', '#14b8a6', '#6366f1', '#a16207', '#64748b', '#d946ef'];
-function color(n, k = 0) {
-  const i = C ? C.personas.indexOf(n) : -1;
-  if (i >= 0) return COLORES[(i + k * 5) % COLORES.length];
-  let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return COLORES[(h + k * 5) % COLORES.length];
+// ---------- avatares: cada persona su icono y su color (ver avatares.js) ----------
+const { partes } = window.Calculo;
+// El icono elegido por cada uno se guarda junto a las marcas, en una entrada aparte («_avatar»)
+const AV = '_avatar';
+const elegido = (n) => (C && C.marcas[AV] ? C.marcas[AV][n] : 0);
+function unAvatar(nombre, cl = '', eleccion = 0) {
+  const { c, svg } = window.Avatares.avatarDe(nombre, eleccion);
+  return `<span class="av ${cl}" style="--c:${c}" title="${esc(nombre)}"><svg viewBox="0 0 32 32" aria-hidden="true">${svg}</svg></span>`;
 }
-const GATO = `<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5.2 15.5 6.4 4.6l7 5.1Q16 9 18.6 9.7l7-5.1 1.2 10.9Q29 19 27 23q-3.2 5.2-11 5.2T5 23q-2-4 .2-7.5Z" fill="var(--c)"/><path d="m8 7.7.6 5 3.3-2.6Zm16 0-.6 5-3.3-2.6Z" fill="#fff" opacity=".35"/><ellipse cx="11.6" cy="17.6" rx="2.2" ry="2.5" fill="#fff"/><ellipse cx="20.4" cy="17.6" rx="2.2" ry="2.5" fill="#fff"/><circle cx="12" cy="18" r="1.3" fill="#1f2937"/><circle cx="20.8" cy="18" r="1.3" fill="#1f2937"/><path d="M14.8 21.2h2.4L16 22.6Z" fill="#fda4af"/><path d="M16 22.6q-.4 1.4-2 1.4M16 22.6q.4 1.4 2 1.4M3.5 20.5l6 .8M3.8 23.8l5.8-1.4M28.5 20.5l-6 .8M28.2 23.8l-5.8-1.4" stroke="#fff" stroke-width=".8" fill="none" stroke-linecap="round" opacity=".8"/></svg>`;
-// Una persona = un gatito. Una pareja ("Ana y Salvi") = dos gatitos juntos.
+// Una persona = un icono. Una pareja ("Marta y Pablo") = el icono de cada uno, juntos.
 function av(n, cl = '') {
-  const k = Math.min(cabezas(n), 3);
-  if (k === 1) return `<span class="av ${cl}" style="--c:${color(n)}" title="${esc(n)}">${GATO}</span>`;
-  return `<span class="av grupo g${k} ${cl}" title="${esc(n)}">${Array.from({ length: k }, (_, j) => `<span class="av" style="--c:${color(n, j)}">${GATO}</span>`).join('')}</span>`;
+  const ps = partes(n).slice(0, 3);
+  if (ps.length <= 1) return unAvatar(n, cl, elegido(n));
+  return `<span class="av grupo g${ps.length} ${cl}" title="${esc(n)}">${ps.map((p, i) => unAvatar(p, '', i === 0 ? elegido(n) : 0)).join('')}</span>`;
 }
 
 async function rpc(fn, args) {
@@ -201,7 +201,7 @@ function pintarInicio() {
       <h2 class="titulo-sec">Nueva cuenta</h2>
       <form id="fNueva">
         <label class="campo"><span>¿Qué es?</span><input name="titulo" placeholder="Cena del viernes" maxlength="60" required></label>
-        <label class="campo"><span>Tu nombre</span><input name="yo" placeholder="Ej. Ana · en pareja: Ana y Salvi" maxlength="40" required autocomplete="given-name" value="${esc(ls.get('nombre', ''))}"></label>
+        <label class="campo"><span>Tu nombre</span><input name="yo" placeholder="Ej. Ana · en pareja: Marta y Pablo" maxlength="40" required autocomplete="given-name" value="${esc(ls.get('nombre', ''))}"></label>
         <div class="campo"><span>¿Cuántos sois en total?</span>
           <div class="fila-num">${contador('comensales', 1, 1, 99)}<small class="suave">Contándote a ti. Una pareja cuenta como 2. Se puede cambiar después.</small></div></div>
         <label class="casilla"><input type="checkbox" name="pago" checked><span>He pagado yo</span></label>
@@ -297,7 +297,7 @@ function pintar() {
     <button class="aforo ${tope() && !faltan() ? 'completo' : ''}" data-a="aforo">${!tope() ? `${hay()} ${hay() === 1 ? 'persona' : 'personas'}` : faltan() ? `${hay()} de ${tope()} personas · faltan ${faltan()} por entrar` : `${ico('check', 14)} Estáis todos (${tope()})`}<span>${ico('lapiz', 13)} Cambiar</span></button>
 
     ${porOtro() ? `<div class="banda alerta"><p>Estás marcando lo de <b>${esc(yo)}</b>.</p><button class="btn peq" data-a="quitar" data-p="${esc(yo)}">Quitar</button><button class="prim" data-a="volver">Volver a mí</button></div>` : ''}
-    ${!editando && C.personas.length === 1 && C.items.length ? `<div class="banda info">${ico('enlace')}<p>Ahora <b>pasa el enlace</b> al grupo. Lo verán al momento; no tienen que registrarse, solo elegir su nombre.</p></div>` : ''}
+    ${!editando && C.personas.length === 1 && C.items.length ? `<div class="banda info">${ico('enlace')}<p>Ahora <b>pasa el enlace</b> al grupo. Cada uno pone su nombre y marca lo que ha tomado; lo veréis todos al momento.</p></div>` : ''}
     ${pintarPendientes(R)}
     ${sinMarcar ? `<div class="banda info">${ico('dedo')}<p><b>Toca lo que has tomado.</b> Si lo compartiste, pulsa «Dividir» y elige entre cuántos: solo se te cuenta tu parte.</p></div>` : ''}
 
@@ -652,6 +652,42 @@ function preguntarEntreCuantos(it) {
   };
 }
 
+// Elegir icono y color (lo ven todos)
+function elegirIcono(n) {
+  const A = window.Avatares;
+  const actual = A.decodificar(Number(elegido(n)) || 0);
+  let icono = actual ? actual.icono : -1;
+  let colorI = actual ? actual.color : 0;
+  const v = ventana(`<h2>Elige tu icono</h2><p class="suave peq">Lo verán todos en esta cuenta.</p>
+    <div class="centro" id="vistaIcono" style="margin:6px 0 12px"></div>
+    <div class="iconos" id="gIconos"><button class="btn auto" data-i="-1">Automático</button>${A.ELEGIBLES.map((svg, i) => `<button class="btn" data-i="${i}"><svg viewBox="0 0 32 32" style="--c:#475569">${svg}</svg></button>`).join('')}</div>
+    <p class="sub">Color</p>
+    <div class="colores" id="gColores">${A.COLORES_ELEGIR.map((c, i) => `<button data-c="${i}" style="background:${c}" aria-label="Color ${i + 1}"></button>`).join('')}</div>
+    <div class="grid2" style="margin-top:16px"><button class="btn" data-cerrar>Cancelar</button><button class="prim" id="okIcono">Guardar</button></div>`);
+  const refrescar = () => {
+    v.querySelectorAll('[data-i]').forEach((b) => b.classList.toggle('sel', Number(b.dataset.i) === icono));
+    v.querySelectorAll('[data-c]').forEach((b) => b.classList.toggle('sel', Number(b.dataset.c) === colorI));
+    $('#gColores', v).classList.toggle('apagado', icono < 0);
+    $('#vistaIcono', v).innerHTML = unAvatar(n, 'gr', icono < 0 ? 0 : A.codigo(icono, colorI)).replace('class="av gr"', 'class="av gr enorme"');
+  };
+  refrescar();
+  v.onclick = (e) => {
+    const bi = e.target.closest('[data-i]');
+    const bc = e.target.closest('[data-c]');
+    if (bi) icono = Number(bi.dataset.i);
+    if (bc && icono >= 0) colorI = Number(bc.dataset.c);
+    if (bi || bc) refrescar();
+  };
+  $('#okIcono', v).onclick = async () => {
+    const cod = icono < 0 ? 0 : A.codigo(icono, colorI);
+    cerrarVentana();
+    const m = (C.marcas[AV] ||= {});
+    if (cod) m[n] = cod; else delete m[n];
+    pintar();
+    await llamar('split_mark', { p_id: id, p_item: AV, p_persona: n, p_peso: cod }).catch(() => {});
+  };
+}
+
 // Cambiar cuántos sois (cualquiera puede, nunca por debajo de los que ya han entrado)
 async function guardarComensales(n) {
   C.comensales = n;
@@ -697,13 +733,13 @@ function pintarQuienEres() {
     <div class="cabecera"><a href="#" class="icono" aria-label="Inicio">${ico('atras')}</a><h1>${esc(C.titulo)}</h1></div>
     <section class="tarjeta">
       <h2>¿Quién eres?</h2>
-      <p class="suave peq" style="margin:4px 0 14px">No hace falta registrarse: elige tu nombre y luego toca lo que has tomado.${tope() ? ` Sois ${tope()}${faltan() ? `; faltan ${faltan()} por entrar` : ''}.` : ''}</p>
+      <p class="suave peq" style="margin:4px 0 14px">Elige tu nombre o escríbelo, y luego toca lo que has tomado.${tope() ? ` Sois ${tope()}${faltan() ? `; faltan ${faltan()} por entrar` : ''}.` : ''}</p>
       ${C.personas.length ? `<div class="lista-personas">${C.personas.map((p) => `<button data-p="${esc(p)}">${av(p, 'gr')}<span>${esc(p)}</span></button>`).join('')}</div>` : ''}
       ${lleno
         ? `<div class="banda info">${ico('gente')}<p>La cuenta es para ${tope()} y ya están. Si eres uno más, escribe tu nombre y se amplía.</p></div>`
         : C.personas.length ? '<p class="suave peq" style="margin-bottom:8px">¿No sales? Escribe tu nombre:</p>' : ''}
       <form id="fYo" style="display:flex;gap:8px">
-        <input name="n" placeholder="Tu nombre · en pareja: Ana y Salvi" maxlength="40" required autocomplete="given-name" value="${esc(C.personas.includes(guardado) ? '' : guardado)}">
+        <input name="n" placeholder="Tu nombre · en pareja: Marta y Pablo" maxlength="40" required autocomplete="given-name" value="${esc(C.personas.includes(guardado) ? '' : guardado)}">
         <button class="prim">Entrar</button>
       </form>
     </section>`;
@@ -927,12 +963,13 @@ document.addEventListener('click', (e) => {
   if (a === 'borrarCuenta') preguntarBorrar(id, C.titulo);
   if (a === 'fotoCam') $('#fotoCam').click();
   if (a === 'fotoSubir') $('#fotoSubir').click();
-  if (a === 'compartir') compartir(`Marca lo que has tomado en «${C.titulo}» (no hace falta registrarse):`, location.href);
+  if (a === 'compartir') compartir(`Pon tu nombre y marca lo que has tomado en «${C.titulo}»:`, location.href);
   if (a === 'enviar') compartir(textoResumen());
   if (a === 'cambiarYo') {
     if (porOtro()) return marcarPor(yoReal);
-    const v = ventana(`<h2>Eres ${esc(yoReal)}</h2><p class="suave peq">Si este móvil lo va a usar otra persona del grupo, cambia de nombre.</p>
-      <div class="botones"><button class="prim ancho" id="cambiar">Soy otra persona</button><button class="btn ancho" data-cerrar>Cancelar</button></div>`);
+    const v = ventana(`<div class="centro">${av(yoReal, 'gr')}</div><h2 class="centro" style="margin-top:8px">Eres ${esc(yoReal)}</h2>
+      <div class="botones"><button class="prim ancho" id="miIcono">Cambiar mi icono</button><button class="btn ancho" id="cambiar">Soy otra persona</button><button class="btn ancho" data-cerrar>Cancelar</button></div>`);
+    $('#miIcono', v).onclick = () => elegirIcono(yoReal);
     $('#cambiar', v).onclick = () => { cerrarVentana(); yo = yoReal = null; ls.set('yo:' + id, null); pintar(); };
   }
   if (a === 'porOtro') marcarPor(b.dataset.p);
@@ -958,7 +995,7 @@ document.addEventListener('click', (e) => {
   }
   if (a === 'persona') {
     const v = ventana(`<h2>Añadir a alguien</h2><p class="suave peq">Para alguien que no va a abrir el enlace. Después marcas lo que ha tomado y vuelves a ti.${tope() ? (faltan() ? ` Queda sitio para ${faltan()}.` : ` Ya estáis ${tope()}: al añadir a alguien se amplía.`) : ''}</p>
-      <form id="fPersona" style="display:flex;gap:8px"><input name="n" placeholder="Nombre · en pareja: Ana y Salvi" maxlength="40" required><button class="prim">Añadir</button></form>`);
+      <form id="fPersona" style="display:flex;gap:8px"><input name="n" placeholder="Nombre · en pareja: Marta y Pablo" maxlength="40" required><button class="prim">Añadir</button></form>`);
     $('#fPersona', v).onsubmit = async (ev) => {
       ev.preventDefault();
       const n = new FormData(ev.target).get('n').trim();

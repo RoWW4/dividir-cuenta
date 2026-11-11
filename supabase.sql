@@ -4,7 +4,7 @@
 
 alter table public.split_bills add column if not exists clave text;
 
--- Cuántas personas hay en un nombre: "Ana y Salvi" = 2, "Ana, Luis y Pepe" = 3
+-- Cuántas personas hay en un nombre: "Marta y Pablo" = 2, "Ana, Luis y Pepe" = 3
 create or replace function public.split_heads(p text)
 returns int language sql immutable set search_path = public as $$
   select greatest(1, coalesce(array_length(

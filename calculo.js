@@ -21,7 +21,7 @@
     return out;
   }
 
-  // Cuántas personas hay en un nombre: "Ana y Salvi" = 2, "Ana, Luis y Pepe" = 3
+  // Cuántas personas hay en un nombre: "Marta y Pablo" = 2, "Ana, Luis y Pepe" = 3
   function partes(nombre) {
     return String(nombre || '').trim().split(/\s*(?:,|\s(?:y|e|&|\+)\s|\s?[&+]\s?)\s*/i).filter(Boolean);
   }

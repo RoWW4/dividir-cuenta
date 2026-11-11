@@ -14,7 +14,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Dividir la cuenta">
 <meta property="og:title" content="Dividir la cuenta">
-<meta property="og:description" content="Marca lo que has tomado y mira cuánto te toca. No hace falta registrarse.">
+<meta property="og:description" content="Pon tu nombre, marca lo que has tomado y mira cuánto te toca.">
 <meta property="og:url" content="https://roww4.github.io/dividir-cuenta/">
 <meta property="og:image" content="https://roww4.github.io/dividir-cuenta/vista-previa.jpg">
 <meta property="og:image:width" content="1200">
@@ -265,6 +265,16 @@ input::placeholder{color:var(--suave);opacity:.7}
 .numeros .btn:first-child{grid-column:span 2;font-size:.95rem}
 .numeros .pasa{opacity:.45}
 .ventana .sub{font-size:.8rem;font-weight:700;color:var(--suave);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 8px}
+.iconos{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.iconos .btn{min-height:58px;padding:6px}
+.iconos .btn svg{width:34px;height:34px}
+.iconos .auto{grid-column:span 2;font-size:.9rem}
+.iconos .btn.sel svg{--c:var(--prim)!important}
+.colores{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;transition:opacity .2s}
+.colores button{height:38px;border-radius:12px;border:3px solid transparent;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)}
+.colores button.sel{border-color:var(--texto)}
+.colores.apagado{opacity:.3;pointer-events:none}
+.av.enorme{width:84px;height:84px;margin:0 auto}
 .numeros.compartida{grid-template-columns:repeat(3,1fr)}
 .numeros.compartida .btn{font-size:.9rem;font-weight:700;min-height:46px}
 .numeros.compartida .btn:first-child{grid-column:auto}
@@ -284,6 +294,7 @@ input::placeholder{color:var(--suave);opacity:.7}
 <input type="file" id="fotoCam" accept="image/*" capture="environment" hidden>
 <input type="file" id="fotoSubir" accept="image/*" hidden>
 <script src="calculo.js"></script>
+<script src="avatares.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
