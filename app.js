@@ -19,7 +19,7 @@ const ls = {
 
 // ---------- iconos (trazos sencillos) ----------
 const P = {
-  recibo: '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
+  recibo: '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><g transform="translate(6.6 6.2) scale(.48)" stroke-width="4"><path d="M4 10h12M4 14h9"/><path d="M19 6a7.7 7.7 0 0 0-5.2-2A7.9 7.9 0 0 0 6 12c0 4.4 3.5 8 7.8 8 2 0 3.8-.8 5.2-2"/></g>',
   camara: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
   imagen: '<rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
   lapiz: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
@@ -294,7 +294,8 @@ function pintar() {
 
     ${porOtro() ? `<div class="banda alerta"><p>Estás marcando lo de <b>${esc(yo)}</b>.</p><button class="btn peq" data-a="quitar" data-p="${esc(yo)}">Quitar</button><button class="prim" data-a="volver">Volver a mí</button></div>` : ''}
     ${!editando && C.personas.length === 1 && C.items.length ? `<div class="banda info">${ico('enlace')}<p>Ahora <b>pasa el enlace</b> al grupo. Lo verán al momento; no tienen que registrarse, solo elegir su nombre.</p></div>` : ''}
-    ${sinMarcar ? `<div class="banda info">${ico('dedo')}<p><b>Toca lo que has tomado.</b> Si lo compartiste, la otra persona también lo toca y se divide.</p></div>` : ''}
+    ${pintarPendientes(R)}
+    ${sinMarcar ? `<div class="banda info">${ico('dedo')}<p><b>Toca lo que has tomado.</b> Si lo compartiste, pulsa «Dividir» y elige entre cuántos: solo se te cuenta tu parte.</p></div>` : ''}
 
     ${!editando && C.items.length ? pintarPagador(R) : ''}
 
@@ -342,6 +343,15 @@ function pintarPlato(it, R) {
     ${!it.todos && uds === 1 && mio ? `<div class="pie"><span class="suave peq">${mio < 1 ? `${porOtro() ? esc(yo) : 'Tú'}: <b>${fraccion(yo, mio)} · ${eur(reparto[yo] || 0)}</b>` : '¿Lo compartiste con alguien?'}</span><button class="btn peq" data-a="repartir">${ico('gente', 15)} ${mio < 1 ? 'Cambiar' : 'Dividir'}</button></div>` : ''}
     ${!it.todos && uds > 1 ? `<div class="pie"><span class="suave peq">${mio ? `${porOtro() ? esc(yo) : 'Tú'}: <b>${mio} de ${uds}</b>` : `Hay ${uds} · ${eur(cts(it.precio / uds))} c/u`}</span><button class="btn peq" data-a="marcar">${mio ? 'Cambiar' : 'Marcar cuántas'}</button></div>` : ''}
   </li>`;
+}
+
+// Aviso: platos que alguien marcó como compartidos y a los que les falta una parte
+function pintarPendientes(R) {
+  if (editando) return '';
+  const lista = C.items.filter((it) => !it.todos && (Number(it.uds) || 1) === 1 && !(C.marcas[it.id] || {})[yo] && partesOtros(it).length && R.faltaPlato[it.id] > 0);
+  if (!lista.length) return '';
+  return `<div class="banda compartidos">${ico('gente')}<div><p><b>${lista.length === 1 ? 'Un plato compartido espera' : `${lista.length} platos compartidos esperan`} la otra parte.</b> Si eras tú, tócalo:</p>
+    <ul>${lista.map((it) => `<li><button data-a="irPlato" data-id="${esc(it.id)}"><b>${esc(it.nombre)}</b> · ${partesOtros(it).map(([p, n]) => `${esc(p)} lo marcó entre ${n}`).join(', ')} · falta ${eur(R.faltaPlato[it.id])}</button></li>`).join('')}</ul></div></div>`;
 }
 
 // Quién lo ha tomado, en una línea: gatitos + nombres + lo que paga cada uno
@@ -515,6 +525,8 @@ async function clicPlato(e) {
   if (a !== 'marcar') return;
   if (it.todos) return preguntarTodos(it);
   if ((Number(it.uds) || 1) > 1) return preguntarCuantas(it);
+  const m0 = C.marcas[it.id] || {};
+  if (!m0[yo] && partesOtros(it).length) return preguntarEntreCuantos(it);
   // Un plato suelto: una pareja cuenta como 2 al compartirlo
   await ponerPeso(it, (C.marcas[it.id] || {})[yo] ? 0 : cabezas(yo));
 }
@@ -551,15 +563,24 @@ function preguntarCuantas(it) {
 // Plato de 1 unidad compartido: ¿entre cuántos? Solo cuenta tu parte; el resto lo marcan los demás.
 const partesDe = (p, w) => Math.round(cabezas(p) / w); // peso 0,5 → «entre 2»
 const fraccion = (p, w) => `${cabezas(p)}/${partesDe(p, w)}`;
+// Partes ya marcadas por otros en un plato compartido: [[persona, «entre N»], …]
+function partesOtros(it) {
+  const m = C.marcas[it.id] || {};
+  return Object.entries(m).filter(([p, w]) => p !== yo && w > 0 && w < 1 && C.personas.includes(p)).map(([p, w]) => [p, partesDe(p, w)]);
+}
 function preguntarEntreCuantos(it) {
   const m = C.marcas[it.id] || {};
   const w = m[yo] || 0;
   const k = cabezas(yo);
-  const actual = w > 0 && w < 1 ? partesDe(yo, w) : k;
+  const otros = partesOtros(it);
+  const sugerido = otros.length ? Math.max(...otros.map(([, n]) => n)) : 0;
+  const actual = w > 0 && w < 1 ? partesDe(yo, w) : w ? k : sugerido || k;
+  const falta = calcular(C).faltaPlato[it.id] || 0;
   const quien = porOtro() ? esc(yo) : k > 1 ? 'vosotros' : 'tú';
   const opciones = Array.from({ length: 7 }, (_, i) => k + i);
   const v = ventana(`<h2>¿Entre cuántas personas lo compartisteis?</h2>
     <p class="suave peq">${esc(it.nombre)} · ${eur(cts(it.precio))}. Solo se te cuenta tu parte; los demás marcan la suya con el nombre que usen.</p>
+    ${otros.length ? `<div class="banda info">${ico('gente')}<p>${otros.map(([p, n]) => `<b>${esc(p)}</b> lo marcó entre ${n}`).join(', ')}.${falta ? ` Faltan <b>${eur(falta)}</b> por marcar.` : ''}</p></div>` : ''}
     <div class="numeros partes">${opciones.map((n) => `<button class="btn ${n === actual ? 'sel' : ''}" data-n="${n}"><span>${n === k ? (k > 1 ? 'Solo nosotros' : 'Solo yo') : `Entre ${n}`}</span><small>${n === k ? 'entero' : `${quien === 'tú' ? 'tu' : 'su'} parte ${eur(Math.round((cts(it.precio) * k) / n))}`}</small></button>`).join('')}
       <button class="btn ${actual > k + 6 ? 'sel' : ''}" id="otroN"><span>${actual > k + 6 ? `Entre ${actual}` : 'Otro número'}</span><small>${actual > k + 6 ? `parte ${eur(Math.round((cts(it.precio) * k) / actual))}` : 'más personas'}</small></button></div>
     <div id="cajaOtro" class="fila-num oculto" style="justify-content:center;margin-top:14px">${contador('otroN', Math.max(actual, k + 7), k + 1, 99)}<button class="prim" id="okOtro">Aplicar</button></div>`);
@@ -863,6 +884,10 @@ document.addEventListener('click', (e) => {
   }
   if (a === 'porOtro') marcarPor(b.dataset.p);
   if (a === 'aforo') preguntarAforo();
+  if (a === 'irPlato') {
+    const it = C.items.find((x) => x.id === b.dataset.id);
+    if (it) preguntarEntreCuantos(it);
+  }
   if (a === 'volver') marcarPor(yoReal);
   if (a === 'quitar') {
     const p = b.dataset.p;
