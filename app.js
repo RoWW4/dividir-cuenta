@@ -97,10 +97,12 @@ function aviso(txt) {
 }
 
 async function cargar() {
-  if (pendientes || guardarT) return;
+  if (pendientes || guardarT || !id) return;
+  const cid = id; // si mientras llega la respuesta te vas a otra pantalla, se ignora
   try {
-    const r = await rpc('split_get', { p_id: id });
-    if (!r) { olvidar(id); pintarError('Esta cuenta no existe o la han borrado.'); return; }
+    const r = await rpc('split_get', { p_id: cid });
+    if (cid !== id) return;
+    if (!r) { olvidar(cid); pintarError('Esta cuenta no existe o la han borrado.'); return; }
     if (pendientes || guardarT) return;
     if (r.ver !== ver) {
       ver = r.ver;
@@ -111,6 +113,7 @@ async function cargar() {
     }
     $('#sinred')?.classList.remove('ver');
   } catch (e) {
+    if (cid !== id) return;
     if (!C) pintarError('No se puede cargar la cuenta. ¿Hay internet?');
     $('#sinred')?.classList.add('ver');
   }
@@ -129,12 +132,13 @@ function normalizar(d) {
 }
 
 function recordar() {
-  const lista = ls.get('cuentas', []).filter((x) => x.id !== id);
+  if (!id) return;
+  const lista = ls.get('cuentas', []).filter((x) => x.id && x.id !== id);
   lista.unshift({ id, titulo: C.titulo, fecha: Date.now() });
   ls.set('cuentas', lista.slice(0, 30));
 }
 function olvidar(cid) {
-  ls.set('cuentas', ls.get('cuentas', []).filter((x) => x.id !== cid));
+  ls.set('cuentas', ls.get('cuentas', []).filter((x) => x.id && String(x.id) !== String(cid)));
   ['yo:', 'clave:'].forEach((k) => ls.set(k + cid, null));
 }
 
@@ -933,6 +937,12 @@ document.addEventListener('focusout', (e) => {
 });
 
 // ---------- arranque ----------
+(() => {
+  const vistos = new Set();
+  const lista = ls.get('cuentas', []);
+  const limpia = lista.filter((x) => x && x.id && !vistos.has(x.id) && vistos.add(x.id));
+  if (limpia.length !== lista.length) ls.set('cuentas', limpia);
+})();
 let reloj = null;
 function ruta() {
   clearInterval(reloj);
