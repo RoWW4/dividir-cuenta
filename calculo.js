@@ -21,6 +21,12 @@
     return out;
   }
 
+  // Cuántas personas hay en un nombre: "Ana y Salvi" = 2, "Ana, Luis y Pepe" = 3
+  function partes(nombre) {
+    return String(nombre || '').trim().split(/\s*(?:,|\s(?:y|e|&|\+)\s|\s?[&+]\s?)\s*/i).filter(Boolean);
+  }
+  const cabezas = (nombre) => Math.max(1, partes(nombre).length);
+
   // cuenta: { items:[{id,nombre,precio,todos}], personas:[...], marcas:{itemId:{persona:peso}}, extra:{tipo:'pct'|'eur', valor} }
   // Devuelve importes en céntimos.
   function calcular(cuenta) {
@@ -34,11 +40,17 @@
       const t = cent(it.precio);
       totalPlatos += t;
       let pesos = {};
-      if (it.todos) personas.forEach((p) => (pesos[p] = 1));
+      if (it.todos) {
+        // A partes iguales por cabeza (una pareja paga 2 partes). Si aún falta gente por entrar, su parte queda sin asignar.
+        personas.forEach((p) => (pesos[p] = cabezas(p)));
+        const faltan = (Number(cuenta.comensales) || 0) - personas.reduce((a, p) => a + cabezas(p), 0);
+        if (faltan > 0) pesos['\u0000faltan'] = faltan;
+      }
       else
         for (const [p, w] of Object.entries(marcas[it.id] || {}))
           if (personas.includes(p) && w > 0) pesos[p] = Number(w);
       const r = repartir(t, pesos);
+      if (r['\u0000faltan']) { sinAsignar += r['\u0000faltan']; delete r['\u0000faltan']; }
       porPlato[it.id] = r;
       if (!Object.keys(r).length) sinAsignar += t;
       for (const [p, c] of Object.entries(r)) sub[p] += c;
@@ -118,6 +130,6 @@
     return { items, total };
   }
 
-  raiz.Calculo = { calcular, repartir, leerTicket, cent };
+  raiz.Calculo = { calcular, repartir, leerTicket, cent, cabezas, partes };
   if (typeof module !== 'undefined') module.exports = raiz.Calculo;
 })(typeof window !== 'undefined' ? window : globalThis);
