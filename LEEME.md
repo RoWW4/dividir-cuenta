@@ -2,7 +2,7 @@
 
 Página web para repartir un ticket entre amigos. No se instala: se abre con un enlace.
 
-1. Quien paga crea la cuenta y apunta lo del ticket (a mano o con una foto).
+1. Quien paga crea la cuenta y apunta lo del ticket: a mano, haciendo una foto o subiendo una (en el ordenador también se puede arrastrar o pegar).
 2. Pulsa «Pasar enlace» y lo manda al grupo.
 3. Cada uno elige su nombre y toca lo que ha tomado. Si varios tocan el mismo plato, se divide entre ellos.
    Con varias unidades (3 cañas) cada uno indica cuántas tomó con − / +.

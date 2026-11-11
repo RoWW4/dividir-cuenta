@@ -7,10 +7,23 @@ const { calcular, leerTicket } = window.Calculo;
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const eur = (c) => (c / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+const cts = (n) => Math.round((Number(n) || 0) * 100);
+const dec = (n) => (n === '' || n == null ? '' : (Number(n) || 0).toFixed(2).replace('.', ','));
+const num = (s) => Number(String(s).replace(/\s|€/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
 const nuevoId = () => Math.random().toString(36).slice(2, 9);
 const ls = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+// Colores e iniciales de cada persona
+const COLORES = ['#0d9488', '#7c3aed', '#db2777', '#ea580c', '#2563eb', '#16a34a', '#ca8a04', '#0891b2', '#9333ea', '#dc2626'];
+function color(n) { let h = 0; for (const c of String(n)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORES[h % COLORES.length]; }
+const av = (n, cl = '') => `<span class="av ${cl}" style="--c:${color(n)}">${esc(String(n).trim().charAt(0) || '?')}</span>`;
+const ICO = {
+  compartir: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></svg>',
+  atras: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>',
+  lapiz: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
 };
 
 async function rpc(fn, args) {
@@ -31,13 +44,14 @@ let yo = null;
 let editando = false;
 let pendientes = 0; // llamadas en curso (para no pisar con el refresco)
 let guardarT = null;
+let recienCreada = null;
 
 function aviso(txt) {
   const t = $('#aviso');
   t.textContent = txt;
   t.classList.add('ver');
   clearTimeout(aviso.t);
-  aviso.t = setTimeout(() => t.classList.remove('ver'), 2200);
+  aviso.t = setTimeout(() => t.classList.remove('ver'), 2400);
 }
 
 async function cargar() {
@@ -50,10 +64,12 @@ async function cargar() {
       ver = r.ver;
       C = normalizar(r.data);
       recordar();
-      if (!(editando && document.activeElement?.matches('input'))) pintar();
+      const escribiendo = document.activeElement?.matches('input') && document.activeElement.closest('#app');
+      if (!(editando && escribiendo) && !document.querySelector('.fondo')) pintar();
     }
     $('#sinred')?.classList.remove('ver');
   } catch (e) {
+    if (!C) pintarError('No se puede cargar la cuenta. ¿Hay internet?');
     $('#sinred')?.classList.add('ver');
   }
 }
@@ -84,9 +100,12 @@ async function llamar(fn, args) {
     if (typeof v === 'number' && v === ver + 1) ver = v;
     else ver = -1;
     return v;
+  } catch (e) {
+    aviso('No se ha podido guardar. ¿Hay internet?');
+    throw e;
+  } finally {
+    pendientes--;
   }
-  catch (e) { aviso('No se ha podido guardar. ¿Hay internet?'); throw e; }
-  finally { pendientes--; }
 }
 
 function guardar() {
@@ -98,46 +117,63 @@ function guardar() {
   }, 600);
 }
 
-// ---------- inicio ----------
+// ---------- portada ----------
 function pintarInicio() {
   document.title = 'Dividir la cuenta';
   const lista = ls.get('cuentas', []);
   $('#app').innerHTML = `
-    <header><h1>🧾 Dividir la cuenta</h1></header>
+    <section class="hero">
+      <div class="logo">🧾</div>
+      <h1>Dividir la cuenta</h1>
+      <p>Cada uno paga lo que ha tomado, sin líos.</p>
+      <div class="pasos">
+        <div><b>1</b>Apunta el ticket</div>
+        <div><b>2</b>Pasa el enlace</div>
+        <div><b>3</b>Cada uno marca lo suyo</div>
+      </div>
+    </section>
     <section class="tarjeta">
-      <p class="suave">Apunta lo del ticket, pasa el enlace al grupo y cada uno marca lo que ha tomado.</p>
+      <h2 style="margin-bottom:14px">Nueva cuenta</h2>
       <form id="fNueva">
-        <label>¿Qué es?<input name="titulo" placeholder="Cena del viernes" maxlength="60" required></label>
-        <label>¿Cómo te llamas?<input name="yo" placeholder="Tu nombre" maxlength="30" required value="${esc(ls.get('nombre', ''))}"></label>
-        <label class="fila"><input type="checkbox" name="pago" checked> He pagado yo</label>
-        <button class="prim">Crear cuenta</button>
+        <label class="campo"><span>¿Qué es?</span><input name="titulo" placeholder="Cena del viernes" maxlength="60" required></label>
+        <label class="campo"><span>Tu nombre</span><input name="yo" placeholder="Cómo te conocen en el grupo" maxlength="30" required autocomplete="given-name" value="${esc(ls.get('nombre', ''))}"></label>
+        <label class="casilla"><input type="checkbox" name="pago" checked><span>He pagado yo</span></label>
+        <button class="prim ancho">Crear y apuntar el ticket</button>
       </form>
     </section>
-    ${lista.length ? `<section class="tarjeta"><h2>Cuentas recientes</h2>
-      ${lista.map((x) => `<a class="reciente" href="#${esc(x.id)}">${esc(x.titulo)}<span class="suave">${new Date(x.fecha).toLocaleDateString('es-ES')}</span></a>`).join('')}
+    ${lista.length ? `<section class="tarjeta"><h2 style="margin-bottom:6px">Cuentas recientes</h2>
+      ${lista.map((x) => `<a class="reciente" href="#${esc(x.id)}"><span class="ic">🧾</span><span class="t">${esc(x.titulo)}</span><span class="suave peq">${new Date(x.fecha).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</span></a>`).join('')}
     </section>` : ''}`;
   $('#fNueva').onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     const nombre = f.get('yo').trim();
-    e.target.querySelector('button').disabled = true;
+    const titulo = f.get('titulo').trim();
+    if (!nombre || !titulo) return;
+    const b = e.target.querySelector('button');
+    b.disabled = true;
+    b.textContent = 'Creando…';
     try {
       const nid = await rpc('split_create', {
-        p_data: { titulo: f.get('titulo').trim(), personas: [nombre], pagador: f.get('pago') ? nombre : '', items: [], extra: { tipo: 'pct', valor: 0 } },
+        p_data: { titulo, personas: [nombre], pagador: f.get('pago') ? nombre : '', items: [], extra: { tipo: 'pct', valor: 0 } },
       });
       ls.set('nombre', nombre);
       ls.set('yo:' + nid, nombre);
-      editando = true;
+      ls.set('creada:' + nid, true);
+      recienCreada = nid;
       location.hash = nid;
     } catch {
       aviso('No se ha podido crear. ¿Hay internet?');
-      e.target.querySelector('button').disabled = false;
+      b.disabled = false;
+      b.textContent = 'Crear y apuntar el ticket';
     }
   };
 }
 
 function pintarError(txt) {
-  $('#app').innerHTML = `<section class="tarjeta"><p>${esc(txt)}</p><a class="btn" href="#">Volver</a></section>`;
+  $('#app').innerHTML = `<div class="cabecera"><a href="#" class="icono" aria-label="Inicio">${ICO.atras}</a><h1>Dividir la cuenta</h1></div>
+    <section class="tarjeta centro"><p style="margin-bottom:14px">${esc(txt)}</p><a class="prim" href="#">Ir al inicio</a></section>`;
+  quitarBarra();
 }
 
 // ---------- cuenta ----------
@@ -146,47 +182,49 @@ function pintar() {
   document.title = C.titulo + ' · Dividir';
   if (!yo || !C.personas.includes(yo)) return pintarQuienEres();
   const R = calcular(C);
-  const mio = C.marcas;
+  const soloYo = C.personas.length === 1;
+  const sinMarcar = !editando && C.items.length && !C.items.some((it) => it.todos || (C.marcas[it.id] || {})[yo]);
   $('#app').innerHTML = `
-    <header>
-      <a href="#" class="atras" aria-label="Inicio">‹</a>
+    <div class="cabecera">
+      <a href="#" class="icono" aria-label="Inicio">${ICO.atras}</a>
       <h1>${esc(C.titulo)}</h1>
-      <button class="btn peq" data-a="compartir">Pasar enlace</button>
-    </header>
+      <button class="icono" data-a="compartir" aria-label="Pasar enlace al grupo">${ICO.compartir}</button>
+    </div>
     <div id="sinred" class="sinred">Sin conexión: los cambios no se guardan</div>
-    <p class="suave centro">Eres <b>${esc(yo)}</b> · <a href="#" data-a="cambiarYo">cambiar</a></p>
+
+    <div class="gente">
+      ${C.personas.map((p) => `<span class="persona ${p === yo ? 'yo' : ''}" ${p === yo ? 'data-a="cambiarYo" role="button" title="Cambiar"' : ''}>${av(p)}${esc(p)}${p === yo ? ' (tú)' : ''}</span>`).join('')}
+      <span class="persona mas" data-a="persona" role="button">+ Añadir</span>
+    </div>
+
+    ${!editando && soloYo && C.items.length ? `<div class="banda info"><p>Ahora <b>pasa el enlace</b> al grupo para que cada uno marque lo suyo.</p><button class="prim" data-a="compartir">Pasar</button></div>` : ''}
+    ${sinMarcar ? `<div class="banda info"><p>👆 <b>Toca lo que has tomado.</b> Si lo compartiste, la otra persona también lo toca y se divide.</p></div>` : ''}
 
     <section class="tarjeta">
       <div class="cab">
-        <h2>Ticket</h2>
-        <button class="btn peq ${editando ? 'prim' : ''}" data-a="editar">${editando ? 'Listo' : 'Editar'}</button>
+        <h2>${editando ? 'Apuntar el ticket' : 'Ticket'}</h2>
+        ${editando ? '' : C.items.length ? `<button class="btn peq" data-a="editar">${ICO.lapiz.replace('<svg', '<svg width="16" height="16"')} Editar</button>` : ''}
       </div>
-      ${editando ? pintarEdicion() : ''}
-      <ul id="platos" class="platos">
-        ${C.items.map((it) => pintarPlato(it, R)).join('') || `<li class="vacio">Aún no hay platos. ${editando ? '' : 'Pulsa «Editar» para añadirlos.'}</li>`}
-      </ul>
-      ${!editando && C.items.length ? '<p class="suave peq">Toca lo que has tomado. Si lo compartiste, que lo toque también la otra persona y se divide.</p>' : ''}
+      ${editando ? pintarEdicion() : C.items.length ? `<ul id="platos" class="platos">${C.items.map((it) => pintarPlato(it, R)).join('')}</ul>` : pintarVacio()}
     </section>
 
-    <section class="tarjeta">
-      <h2>Lo que paga cada uno</h2>
-      <ul class="resumen">
-        ${C.personas.map((p) => `<li class="${p === yo ? 'yo' : ''}"><span>${esc(p)}${p === C.pagador ? ' <small>pagó</small>' : ''}</span><b>${eur(R.total[p] || 0)}</b></li>`).join('')}
-      </ul>
-      ${R.sinAsignar ? `<p class="alerta">Falta por marcar: <b>${eur(R.sinAsignar)}</b></p>` : C.items.length ? '<p class="ok">✓ Todo el ticket está repartido</p>' : ''}
-      <div class="totales">
-        <span>Platos: ${eur(R.totalPlatos)}</span>
-        ${R.totalCuenta !== R.totalPlatos ? `<span>Con propina: ${eur(R.totalCuenta)}</span>` : ''}
-        ${C.totalTicket && Math.round(C.totalTicket * 100) !== R.totalPlatos ? `<span class="alerta">El ticket dice ${eur(Math.round(C.totalTicket * 100))}</span>` : ''}
-      </div>
-      <div class="filaBtns">
-        <button class="btn" data-a="extra">Propina: ${C.extra.valor ? (C.extra.tipo === 'pct' ? C.extra.valor + ' %' : eur(Math.round(C.extra.valor * 100))) : 'no'}</button>
-        <button class="btn" data-a="pagador">Pagó: ${esc(C.pagador || '¿quién?')}</button>
-      </div>
-      <button class="prim ancho" data-a="enviar">Enviar resumen al grupo</button>
-    </section>`;
-  $('#platos').onclick = clicPlato;
+    ${C.items.length && !editando ? pintarResumen(R) : ''}`;
+  pintarBarra(R);
+  $('#app').oninput = null;
   if (editando) prepararEdicion();
+  else if ($('#platos')) $('#platos').onclick = clicPlato;
+}
+
+function pintarVacio() {
+  return `<div class="vacio">
+    <div class="gr">🍽️</div>
+    <p class="suave">Todavía no hay nada apuntado.</p>
+    <div class="fotos">
+      <button class="btn" data-a="fotoCam">📷 Hacer foto</button>
+      <button class="btn" data-a="fotoSubir">🖼️ Subir foto</button>
+    </div>
+    <button class="prim ancho" data-a="editar">✍️ Escribirlo a mano</button>
+  </div>`;
 }
 
 function pintarPlato(it, R) {
@@ -195,70 +233,118 @@ function pintarPlato(it, R) {
   const uds = Number(it.uds) || 1;
   const quien = it.todos ? C.personas : Object.keys(m).filter((p) => m[p] > 0 && C.personas.includes(p));
   const reparto = R.porPlato[it.id] || {};
-  if (editando)
-    return `<li class="plato ed" data-id="${esc(it.id)}">
-      <input class="n" value="${esc(it.uds > 1 ? it.uds : 1)}" inputmode="numeric" aria-label="Cantidad" data-c="uds">
-      <input class="nom" value="${esc(it.nombre)}" aria-label="Plato" data-c="nombre">
-      <input class="pre" value="${esc(String(it.precio).replace('.', ','))}" inputmode="decimal" aria-label="Precio total" data-c="precio">
-      <button class="x" data-a="borrar" aria-label="Quitar">✕</button>
-    </li>`;
-  return `<li class="plato ${mio || it.todos ? 'mio' : ''} ${quien.length ? '' : 'libre'}" data-id="${esc(it.id)}">
-    <div class="pp" data-a="marcar">
+  const marcado = mio || it.todos;
+  return `<li class="plato ${marcado ? 'mio' : ''} ${quien.length ? '' : 'libre'}" data-id="${esc(it.id)}">
+    <div class="pp" data-a="marcar" role="checkbox" aria-checked="${marcado ? 'true' : 'false'}" tabindex="0">
+      <span class="check">${marcado ? '✓' : ''}</span>
       <span class="nom">${uds > 1 ? `<span class="uds">${uds}×</span>` : ''}${esc(it.nombre)}</span>
-      <span class="pre">${eur(Math.round(it.precio * 100))}</span>
+      <span class="pre">${eur(cts(it.precio))}</span>
     </div>
     <div class="quien">
-      ${it.todos ? '<span class="chip todos">Para todos</span>' : quien.map((p) => `<span class="chip ${p === yo ? 'yo' : ''}">${esc(p)}${m[p] > 1 || uds > 1 ? ` ×${m[p]}` : ''} · ${eur(reparto[p] || 0)}</span>`).join('')}
-      ${!it.todos && uds > 1 && mio ? `<span class="mas"><button data-a="menos" aria-label="Una menos">−</button><button data-a="mas" aria-label="Una más">+</button></span>` : ''}
-      <button class="enlace" data-a="todos">${it.todos ? 'quitar «para todos»' : 'para todos'}</button>
+      ${it.todos
+        ? `<span class="chip todos">👥 Para todos · ${eur(reparto[yo] || 0)} c/u</span>`
+        : quien.length
+          ? quien.map((p) => `<span class="chip">${av(p)}${esc(p)}${uds > 1 ? ` ×${m[p]}` : ''} · ${eur(reparto[p] || 0)}</span>`).join('')
+          : `<span class="sinmarcar">Nadie lo ha marcado</span>`}
+      <button class="todosBtn ${it.todos ? 'on' : ''}" data-a="todos">👥 ${it.todos ? 'Es para todos' : '¿Para todos?'}</button>
     </div>
+    ${!it.todos && uds > 1 && mio ? `<div class="pie"><span class="suave peq" style="white-space:nowrap">¿Cuántas?</span><span class="contador"><button data-a="menos" aria-label="Una menos">−</button><span>${mio} de ${uds}</span><button data-a="mas" aria-label="Una más">+</button></span></div>` : ''}
   </li>`;
 }
 
-function pintarEdicion() {
-  return `
-    <div class="edicion">
-      <button class="btn ancho" data-a="foto">📷 Leer ticket de una foto</button>
-      <input type="file" id="foto" accept="image/*" capture="environment" hidden>
-      <form id="fPlato" class="nuevo">
-        <input name="uds" class="n" value="1" inputmode="numeric" aria-label="Cantidad">
-        <input name="nombre" class="nom" placeholder="Plato o bebida" required maxlength="60">
-        <input name="precio" class="pre" placeholder="€ total" inputmode="decimal" required>
-        <button class="prim" aria-label="Añadir">+</button>
-      </form>
-      <label class="fila peq">Total del ticket (para comprobar)
-        <input id="totalTicket" class="pre" inputmode="decimal" value="${esc(C.totalTicket ? String(C.totalTicket).replace('.', ',') : '')}" placeholder="opcional"></label>
-      <label class="fila peq">Nombre de la cuenta <input id="titulo" value="${esc(C.titulo)}" maxlength="60"></label>
-      <p class="suave peq">Pon el precio de la línea entera (si son 3 cañas, lo que cuestan las 3).</p>
-    </div>`;
+function pintarResumen(R) {
+  const nada = (p) => !C.items.some((it) => it.todos || (C.marcas[it.id] || {})[p]);
+  return `<section class="tarjeta">
+    <h2 style="margin-bottom:8px">Lo que paga cada uno</h2>
+    <ul class="resumen">
+      ${C.personas.map((p) => `<li class="${p === yo ? 'yo' : ''}">${av(p)}<span class="n">${esc(p)}${p === C.pagador ? '<span class="etiqueta">PAGÓ</span>' : ''}${nada(p) ? '<small>Aún no ha marcado nada</small>' : ''}</span><b>${eur(R.total[p] || 0)}</b></li>`).join('')}
+    </ul>
+    ${R.sinAsignar
+      ? `<div class="banda alerta"><p>Falta por marcar <b>${eur(R.sinAsignar)}</b></p></div>`
+      : '<div class="banda ok"><p>✓ Todo el ticket está repartido</p></div>'}
+    ${C.totalTicket && cts(C.totalTicket) !== R.totalPlatos ? `<div class="banda alerta"><p>Lo apuntado (${eur(R.totalPlatos)}) no coincide con el ticket (${eur(cts(C.totalTicket))}).</p></div>` : ''}
+    <div class="totales"><span>Platos ${eur(R.totalPlatos)}</span>${R.totalCuenta !== R.totalPlatos ? `<span>Con propina <b>${eur(R.totalCuenta)}</b></span>` : `<span>Total <b>${eur(R.totalCuenta)}</b></span>`}</div>
+    <div class="ajustes">
+      <button class="btn" data-a="extra"><small>Propina</small><span>${C.extra.valor ? (C.extra.tipo === 'pct' ? C.extra.valor + ' %' : eur(cts(C.extra.valor))) : 'Sin propina'}</span></button>
+      <button class="btn" data-a="pagador"><small>Ha pagado</small><span>${esc(C.pagador || 'Elegir…')}</span></button>
+    </div>
+  </section>`;
 }
 
-const num = (s) => Number(String(s).replace(/\s|€/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.'));
+function pintarBarra(R) {
+  let b = $('#barraInf');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'barraInf';
+    b.className = 'barra-inf';
+    document.body.appendChild(b);
+  }
+  if (editando) {
+    b.innerHTML = `<div><span class="tt"><small>${C.items.length} ${C.items.length === 1 ? 'línea' : 'líneas'}</small><b>${eur(R.totalPlatos)}</b></span>
+      <button class="prim" data-a="editar" ${C.items.length ? '' : 'disabled style="opacity:.5"'}>Listo, a repartir ✓</button></div>`;
+  } else if (C.items.length) {
+    b.innerHTML = `<div><span class="tt"><small>${yo === C.pagador ? `Tu parte · te deben ${eur(Object.entries(R.total).reduce((a, [p, c]) => a + (p === yo ? 0 : c), 0))}` : C.pagador ? `Te toca pagar a ${esc(C.pagador)}` : 'Te toca'}</small><b>${eur(R.total[yo] || 0)}</b></span>
+      <button class="prim" data-a="enviar">Enviar resumen</button></div>`;
+  } else b.remove();
+}
+function quitarBarra() { $('#barraInf')?.remove(); }
+
+function pintarEdicion() {
+  return `
+    <div class="fotos">
+      <button class="btn" data-a="fotoCam">📷 Hacer foto</button>
+      <button class="btn" data-a="fotoSubir">🖼️ Subir foto</button>
+    </div>
+    <form id="fPlato" class="anadir">
+      <input name="nombre" placeholder="Plato o bebida (ej. Croquetas)" required maxlength="60" autocomplete="off" enterkeyhint="next">
+      <div class="fila">
+        <span class="minis"><input name="uds" value="1" inputmode="numeric" aria-label="Unidades"><small>uds</small></span>
+        <span class="eurIn"><input name="precio" placeholder="0,00" inputmode="decimal" required aria-label="Precio de la línea" enterkeyhint="done"></span>
+        <button class="prim" aria-label="Añadir">Añadir</button>
+      </div>
+    </form>
+    ${C.items.length ? `<ul id="platos" class="platos ed-lista">${C.items.map((it) => `<li class="plato ed" data-id="${esc(it.id)}">
+        <input class="nomIn" value="${esc(it.nombre)}" aria-label="Plato" data-c="nombre">
+        <div class="fila">
+          <span class="minis"><input value="${esc(Number(it.uds) > 1 ? it.uds : 1)}" inputmode="numeric" aria-label="Unidades" data-c="uds"><small>uds</small></span>
+          <span class="eurIn"><input value="${dec(it.precio)}" inputmode="decimal" aria-label="Precio de la línea" data-c="precio"></span>
+        </div>
+        <button class="x" data-a="borrar" aria-label="Quitar ${esc(it.nombre)}">✕</button>
+      </li>`).join('')}</ul>` : '<p class="suave peq centro" style="padding:6px 0 12px">Añade cada línea del ticket. Si son 3 cañas, pon 3 uds y lo que cuestan las 3.</p>'}
+    <label class="campo mt"><span>Total del ticket (opcional, para comprobar)</span><span class="eurIn"><input id="totalTicket" inputmode="decimal" value="${dec(C.totalTicket)}" placeholder="0,00"></span></label>
+    <label class="campo"><span>Nombre de la cuenta</span><input id="titulo" value="${esc(C.titulo)}" maxlength="60"></label>`;
+}
 
 function prepararEdicion() {
   $('#fPlato').onsubmit = (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     const precio = num(f.get('precio'));
-    if (!(precio >= 0)) return aviso('Precio no válido');
-    C.items.push({ id: nuevoId(), nombre: f.get('nombre').trim(), precio, uds: Math.max(1, parseInt(f.get('uds')) || 1) });
+    const nombre = f.get('nombre').trim();
+    if (!nombre) return;
+    if (!(precio >= 0)) return aviso('Ese precio no es válido');
+    C.items.push({ id: nuevoId(), nombre, precio, uds: Math.max(1, parseInt(f.get('uds')) || 1) });
     guardar();
     pintar();
     $('#fPlato [name=nombre]').focus();
   };
-  $('#platos').oninput = (e) => {
-    const li = e.target.closest('li');
-    const it = C.items.find((x) => x.id === li?.dataset.id);
-    if (!it) return;
-    const c = e.target.dataset.c;
-    if (c === 'nombre') it.nombre = e.target.value;
-    if (c === 'precio') { const v = num(e.target.value); if (v >= 0) it.precio = v; }
-    if (c === 'uds') it.uds = Math.max(1, parseInt(e.target.value) || 1);
+  const app = $('#app');
+  app.oninput = (e) => {
+    const t = e.target;
+    if (t.id === 'totalTicket') C.totalTicket = num(t.value) || '';
+    else if (t.id === 'titulo') { C.titulo = t.value.trim() || 'Cuenta'; $('.cabecera h1').textContent = C.titulo; }
+    else {
+      const it = C.items.find((x) => x.id === t.closest('li.plato')?.dataset.id);
+      if (!it) return;
+      const c = t.dataset.c;
+      if (c === 'nombre') it.nombre = t.value;
+      if (c === 'precio') { const v = num(t.value); if (v >= 0) it.precio = v; }
+      if (c === 'uds') it.uds = Math.max(1, parseInt(t.value) || 1);
+    }
     guardar();
+    pintarBarra(calcular(C));
   };
-  $('#totalTicket').oninput = (e) => { C.totalTicket = num(e.target.value) || ''; guardar(); };
-  $('#titulo').oninput = (e) => { C.titulo = e.target.value.trim() || 'Cuenta'; guardar(); };
-  $('#foto').onchange = (e) => e.target.files[0] && leerFoto(e.target.files[0]);
+  $('#platos') && ($('#platos').onclick = clicPlato);
 }
 
 async function clicPlato(e) {
@@ -282,7 +368,7 @@ async function clicPlato(e) {
   let peso = m[yo] || 0;
   const uds = Number(it.uds) || 1;
   if (a === 'marcar') {
-    if (it.todos) return aviso('Está «para todos». Quítalo para marcarlo solo para algunos.');
+    if (it.todos) return aviso('Está «para todos». Quítalo abajo para marcarlo solo para algunos.');
     peso = peso ? 0 : 1;
   }
   if (a === 'mas') peso = Math.min(uds, peso + 1);
@@ -294,30 +380,34 @@ async function clicPlato(e) {
 }
 
 function pintarQuienEres() {
+  quitarBarra();
+  const guardado = ls.get('nombre', '');
   $('#app').innerHTML = `
-    <header><h1>${esc(C.titulo)}</h1></header>
+    <div class="cabecera"><a href="#" class="icono" aria-label="Inicio">${ICO.atras}</a><h1>${esc(C.titulo)}</h1></div>
     <section class="tarjeta">
       <h2>¿Quién eres?</h2>
-      <div class="personas">
-        ${C.personas.map((p) => `<button class="btn" data-p="${esc(p)}">${esc(p)}</button>`).join('')}
-      </div>
-      <form id="fYo" class="nuevo">
-        <input name="n" placeholder="Si no sales, escribe tu nombre" maxlength="30" required value="${esc(C.personas.includes(ls.get('nombre', '')) ? '' : ls.get('nombre', ''))}">
+      <p class="suave peq" style="margin:4px 0 14px">Después tocas lo que has tomado y ves cuánto te toca.</p>
+      ${C.personas.length ? `<div class="lista-personas">${C.personas.map((p) => `<button data-p="${esc(p)}">${av(p, 'gr')}${esc(p)}</button>`).join('')}</div>
+      <p class="suave peq" style="margin-bottom:8px">¿No sales? Escribe tu nombre:</p>` : ''}
+      <form id="fYo" class="fila" style="display:flex;gap:8px">
+        <input name="n" placeholder="Tu nombre" maxlength="30" required autocomplete="given-name" value="${esc(C.personas.includes(guardado) ? '' : guardado)}">
         <button class="prim">Entrar</button>
       </form>
-      <p class="suave peq">Luego tocas lo que has tomado y ves cuánto te toca.</p>
     </section>`;
-  $('.personas').onclick = (e) => { const p = e.target.dataset.p; if (p) elegirYo(p); };
+  $('.lista-personas') && ($('.lista-personas').onclick = (e) => { const p = e.target.closest('[data-p]')?.dataset.p; if (p) elegirYo(p); });
   $('#fYo').onsubmit = async (e) => {
     e.preventDefault();
     const n = new FormData(e.target).get('n').trim();
     if (!n) return;
-    if (!C.personas.includes(n)) {
-      C.personas.push(n);
-      await llamar('split_join', { p_id: id, p_persona: n }).catch(() => {});
-    }
+    await anadirPersona(n);
     elegirYo(n);
   };
+}
+
+async function anadirPersona(n) {
+  if (C.personas.includes(n)) return;
+  C.personas.push(n);
+  await llamar('split_join', { p_id: id, p_persona: n }).catch(() => {});
 }
 
 function elegirYo(p) {
@@ -325,6 +415,7 @@ function elegirYo(p) {
   ls.set('yo:' + id, p);
   ls.set('nombre', p);
   pintar();
+  window.scrollTo(0, 0);
 }
 
 // ---------- foto del ticket ----------
@@ -335,44 +426,59 @@ function cargarTesseract() {
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
     s.onload = ok;
-    s.onerror = () => { tesseract = null; mal(new Error('No se pudo cargar el lector')); };
+    s.onerror = () => { tesseract = null; mal(new Error('No se pudo cargar el lector de tickets. ¿Hay internet?')); };
     document.head.appendChild(s);
   }));
 }
 
 async function leerFoto(archivo) {
-  const v = ventana(`<h2>Leyendo el ticket…</h2><p class="suave" id="prog">Preparando (la primera vez tarda un poco)</p><div class="barra"><i id="barra"></i></div>`);
+  if (!archivo || !/^image\//.test(archivo.type)) return aviso('Eso no es una imagen');
+  if (!editando) { editando = true; pintar(); }
+  const urlVista = URL.createObjectURL(archivo);
+  const v = ventana(`<img class="vista" src="${urlVista}" alt="">
+    <h2>Leyendo el ticket…</h2><p class="suave peq" id="prog">Preparando (la primera vez tarda un poco)</p><div class="barra"><i id="barra"></i></div>
+    <button class="btn ancho" data-cerrar>Cancelar</button>`);
+  let cancelado = false;
+  v.closest('.fondo').addEventListener('cerrar', () => (cancelado = true));
   try {
     await cargarTesseract();
     const img = await reducir(archivo);
     const r = await Tesseract.recognize(img, 'spa', {
       logger: (m) => {
-        if (m.status === 'recognizing text') {
-          $('#prog', v).textContent = 'Leyendo…';
-          $('#barra', v).style.width = Math.round(m.progress * 100) + '%';
+        if (m.status === 'recognizing text' && $('#barra', v)) {
+          $('#prog', v).textContent = 'Leyendo las líneas…';
+          $('#barra', v).style.width = Math.max(3, Math.round(m.progress * 100)) + '%';
         }
       },
     });
+    if (cancelado) return;
     const leidos = leerTicket(r.data.text);
     if (!leidos.length) {
-      v.innerHTML = `<h2>No he sabido leerlo</h2><p class="suave">Prueba con más luz y el ticket estirado, o apúntalo a mano.</p><button class="prim ancho" data-cerrar>Vale</button>`;
+      v.innerHTML = `<h2>No he sabido leerlo</h2><p class="suave">Prueba con más luz, el ticket estirado y de frente, o apúntalo a mano.</p><button class="prim ancho" data-cerrar>Vale</button>`;
       return;
     }
-    v.innerHTML = `<h2>He leído esto</h2><p class="suave peq">Quita lo que no sea un plato y corrige lo que esté mal después.</p>
-      <ul class="leidos">${leidos.map((x, i) => `<li><label><input type="checkbox" checked data-i="${i}"> <span>${x.uds > 1 ? x.uds + '× ' : ''}${esc(x.nombre)}</span><b>${eur(Math.round(x.precio * 100))}</b></label></li>`).join('')}</ul>
-      <p class="suave peq">Suma: ${eur(leidos.reduce((a, x) => a + Math.round(x.precio * 100), 0))}</p>
-      <div class="filaBtns"><button class="btn" data-cerrar>Cancelar</button><button class="prim" id="anadir">Añadir</button></div>`;
+    const suma = () => [...v.querySelectorAll('.leidos input:checked')].reduce((a, c) => a + cts(leidos[c.dataset.i].precio), 0);
+    v.innerHTML = `<h2>He leído ${leidos.length} ${leidos.length === 1 ? 'línea' : 'líneas'}</h2>
+      <p class="suave peq">Desmarca lo que no sea un plato. Luego puedes corregir nombres y precios.</p>
+      <ul class="leidos">${leidos.map((x, i) => `<li><label><input type="checkbox" checked data-i="${i}"><span>${x.uds > 1 ? `<span class="uds">${x.uds}×</span>` : ''}${esc(x.nombre)}</span><b class="pre">${eur(cts(x.precio))}</b></label></li>`).join('')}</ul>
+      <p class="peq" style="margin-bottom:12px">Suma: <b id="suma"></b></p>
+      <div class="grid2"><button class="btn" data-cerrar>Cancelar</button><button class="prim" id="anadir">Añadir al ticket</button></div>`;
+    v.onchange = () => ($('#suma', v).textContent = eur(suma()));
+    v.onchange();
     $('#anadir', v).onclick = () => {
-      v.querySelectorAll('input:checked').forEach((c) => {
+      v.querySelectorAll('.leidos input:checked').forEach((c) => {
         const x = leidos[c.dataset.i];
         C.items.push({ id: nuevoId(), nombre: x.nombre, precio: x.precio, uds: x.uds });
       });
       cerrarVentana();
       guardar();
       pintar();
+      aviso('Añadido. Revisa que esté todo bien.');
     };
   } catch (e) {
-    v.innerHTML = `<h2>Algo ha fallado</h2><p class="suave">${esc(e.message)}</p><button class="prim ancho" data-cerrar>Vale</button>`;
+    if (!cancelado) v.innerHTML = `<h2>Algo ha fallado</h2><p class="suave">${esc(e.message)}</p><button class="prim ancho" data-cerrar>Vale</button>`;
+  } finally {
+    URL.revokeObjectURL(urlVista);
   }
 }
 
@@ -390,17 +496,40 @@ async function reducir(archivo) {
   return cv;
 }
 
+for (const sel of ['#fotoCam', '#fotoSubir'])
+  $(sel).onchange = (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) leerFoto(f);
+  };
+// En el ordenador: arrastrar o pegar una imagen del ticket
+document.addEventListener('dragover', (e) => { if (C && yo) e.preventDefault(); });
+document.addEventListener('drop', (e) => {
+  const f = e.dataTransfer?.files?.[0];
+  if (C && yo && f) { e.preventDefault(); leerFoto(f); }
+});
+document.addEventListener('paste', (e) => {
+  const f = [...(e.clipboardData?.files || [])].find((x) => x.type.startsWith('image/'));
+  if (C && yo && f) { e.preventDefault(); leerFoto(f); }
+});
+
 // ---------- ventanas ----------
 function ventana(html) {
   cerrarVentana();
   const fondo = document.createElement('div');
   fondo.className = 'fondo';
-  fondo.innerHTML = `<div class="ventana">${html}</div>`;
+  fondo.innerHTML = `<div class="ventana" role="dialog" aria-modal="true">${html}</div>`;
   fondo.onclick = (e) => { if (e.target === fondo || e.target.closest('[data-cerrar]')) cerrarVentana(); };
   document.body.appendChild(fondo);
   return $('.ventana', fondo);
 }
-function cerrarVentana() { document.querySelector('.fondo')?.remove(); }
+function cerrarVentana() {
+  const f = document.querySelector('.fondo');
+  if (!f) return;
+  f.dispatchEvent(new Event('cerrar'));
+  f.remove();
+}
+document.addEventListener('keydown', (e) => e.key === 'Escape' && cerrarVentana());
 
 function textoResumen() {
   const R = calcular(C);
@@ -424,22 +553,43 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-a]');
   if (!b || b.closest('#platos')) return;
   const a = b.dataset.a;
-  if (a === 'editar') { editando = !editando; pintar(); }
-  if (a === 'foto') $('#foto').click();
+  if (a === 'editar') {
+    editando = !editando;
+    if (!editando) cerrarVentana();
+    pintar();
+    window.scrollTo(0, 0);
+  }
+  if (a === 'fotoCam') $('#fotoCam').click();
+  if (a === 'fotoSubir') $('#fotoSubir').click();
   if (a === 'compartir') compartir(`Marca lo que has tomado en «${C.titulo}»:`, location.href);
   if (a === 'enviar') compartir(textoResumen());
-  if (a === 'cambiarYo') { e.preventDefault(); yo = null; ls.set('yo:' + id, null); pintar(); }
+  if (a === 'cambiarYo') { yo = null; ls.set('yo:' + id, null); pintar(); }
+  if (a === 'persona') {
+    const v = ventana(`<h2>Añadir a alguien</h2><p class="suave peq">Para alguien que no va a abrir el enlace. Luego puedes entrar como esa persona (tocando tu nombre arriba) y marcar lo suyo.</p>
+      <form id="fPersona" style="display:flex;gap:8px"><input name="n" placeholder="Nombre" maxlength="30" required><button class="prim">Añadir</button></form>`);
+    $('#fPersona', v).onsubmit = async (ev) => {
+      ev.preventDefault();
+      const n = new FormData(ev.target).get('n').trim();
+      if (!n) return;
+      cerrarVentana();
+      await anadirPersona(n);
+      pintar();
+    };
+    setTimeout(() => $('#fPersona input', v)?.focus(), 50);
+  }
   if (a === 'pagador') {
-    const v = ventana(`<h2>¿Quién pagó?</h2><div class="personas">${C.personas.map((p) => `<button class="btn ${p === C.pagador ? 'prim' : ''}" data-p="${esc(p)}">${esc(p)}</button>`).join('')}</div>`);
-    v.onclick = (ev) => { const p = ev.target.dataset.p; if (p) { C.pagador = p; guardar(); cerrarVentana(); pintar(); } };
+    const v = ventana(`<h2>¿Quién ha pagado?</h2><p class="suave peq">A esa persona le pasan el dinero los demás.</p>
+      <div class="lista-personas">${C.personas.map((p) => `<button class="${p === C.pagador ? 'sel' : ''}" data-p="${esc(p)}">${av(p, 'gr')}${esc(p)}</button>`).join('')}</div>`);
+    v.onclick = (ev) => { const p = ev.target.closest('[data-p]')?.dataset.p; if (p) { C.pagador = p; guardar(); cerrarVentana(); pintar(); } };
   }
   if (a === 'extra') {
-    const v = ventana(`<h2>Propina o extra</h2>
-      <p class="suave peq">Se reparte según lo que ha tomado cada uno.</p>
-      <div class="personas">${[0, 5, 10].map((n) => `<button class="btn" data-pct="${n}">${n ? n + ' %' : 'Sin propina'}</button>`).join('')}</div>
-      <form id="fExtra" class="nuevo"><input name="v" class="pre" inputmode="decimal" placeholder="€ fijos" value="${C.extra.tipo === 'eur' ? esc(C.extra.valor) : ''}"><button class="prim">Poner €</button></form>`);
+    const ex = C.extra;
+    const v = ventana(`<h2>Propina</h2><p class="suave peq">Se reparte según lo que ha tomado cada uno.</p>
+      <div class="grid3">${[0, 5, 10].map((n) => `<button class="btn ${ex.tipo === 'pct' && Number(ex.valor) === n ? 'sel' : ''}" data-pct="${n}">${n ? n + ' %' : 'Nada'}</button>`).join('')}</div>
+      <p class="suave peq" style="margin:14px 0 6px">O una cantidad fija:</p>
+      <form id="fExtra" style="display:flex;gap:8px"><span class="eurIn"><input name="v" inputmode="decimal" placeholder="0,00" value="${ex.tipo === 'eur' && ex.valor ? dec(ex.valor) : ''}"></span><button class="prim">Poner</button></form>`);
     v.onclick = (ev) => {
-      const n = ev.target.dataset.pct;
+      const n = ev.target.closest('[data-pct]')?.dataset.pct;
       if (n != null) { C.extra = { tipo: 'pct', valor: Number(n) }; guardar(); cerrarVentana(); pintar(); }
     };
     $('#fExtra', v).onsubmit = (ev) => {
@@ -449,17 +599,28 @@ document.addEventListener('click', (e) => {
     };
   }
 });
+// Al salir de un precio, dejarlo con dos decimales
+document.addEventListener('focusout', (e) => {
+  const t = e.target;
+  if ((t.dataset?.c === 'precio' || t.id === 'totalTicket') && t.value.trim()) t.value = dec(num(t.value) || 0);
+});
+// Teclado: Enter o espacio sobre un plato lo marca
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.pp')) { e.preventDefault(); e.target.click(); }
+});
 
 // ---------- arranque ----------
 let reloj = null;
 function ruta() {
   clearInterval(reloj);
   cerrarVentana();
+  quitarBarra();
   id = location.hash.slice(1) || null;
   C = null; ver = 0;
+  editando = !!id && id === recienCreada;
   if (!id) return pintarInicio();
   yo = ls.get('yo:' + id, null);
-  $('#app').innerHTML = '<p class="suave centro">Cargando…</p>';
+  $('#app').innerHTML = '<p class="suave centro" style="padding-top:40vh">Cargando…</p>';
   cargar();
   reloj = setInterval(() => document.visibilityState === 'visible' && cargar(), 3000);
 }
